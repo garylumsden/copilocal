@@ -351,6 +351,57 @@ public sealed class ProviderOrchestrationTests
     }
 
     [TestMethod]
+    public void ProbeToolCalling_UsesGenerousTokenBudget()
+    {
+        // Arrange: a small budget truncates a reasoning model's tool call
+        // (finish_reason "length" -> undispatchable), so the probe must request >=512.
+        var http = new FakeHttpGateway();
+        http.AddPost(ChatUrl, ok: true, status: 200,
+            body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
+        var providers = new Providers(new FakeProcessRunner(), http);
+
+        // Act
+        providers.ProbeToolCalling(BaseUrl, "model");
+
+        // Assert
+        http.PostCalls.Should().ContainSingle().Which.Json.Should().Contain("\"max_tokens\":512");
+    }
+
+    [TestMethod]
+    public void ProbeToolCalling_ReasoningContentWithToolCall_FlagsReasoning()
+    {
+        // Arrange: a conditional reasoner (e.g. gemma) emits reasoning_content before the
+        // call on the substantive probe prompt - the trivial warm-up misses this.
+        var http = new FakeHttpGateway();
+        http.AddPost(ChatUrl, ok: true, status: 200,
+            body: """{"choices":[{"message":{"content":"","reasoning_content":"Let me think...","tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
+        var providers = new Providers(new FakeProcessRunner(), http);
+
+        // Act
+        var result = providers.ProbeToolCalling(BaseUrl, "model");
+
+        // Assert
+        result.Status.Should().Be(Providers.ToolStatus.Ok);
+        result.Reasoning.Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void ProbeToolCalling_NoReasoningField_ReasoningFalse()
+    {
+        // Arrange
+        var http = new FakeHttpGateway();
+        http.AddPost(ChatUrl, ok: true, status: 200,
+            body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
+        var providers = new Providers(new FakeProcessRunner(), http);
+
+        // Act
+        var result = providers.ProbeToolCalling(BaseUrl, "model");
+
+        // Assert
+        result.Reasoning.Should().BeFalse();
+    }
+
+    [TestMethod]
     public void Unload_OllamaModel_RecordsOllamaStop()
     {
         // Arrange

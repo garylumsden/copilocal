@@ -11,7 +11,7 @@ ReleaseDate: 2026-06-11
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-x64.exe
-    InstallerSha256: 26440CC4FC7201DE63D83402159E7A15D53D36E84757EC96D21FD18DB5113164
+    InstallerSha256: 68F36A82E87523E35ECB7CD6AD85568142D301B51DD6D8751BC0133266FD23F0
   - Architecture: arm64
     InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-arm64.exe
     InstallerSha256: <SHA256_ARM64>

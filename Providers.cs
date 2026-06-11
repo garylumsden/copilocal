@@ -366,12 +366,15 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
     /// <summary>Validate the model performs *native* tool calling on the chat/completions
     /// wire, which Copilot's agentic loop depends on. Some models (e.g. Ollama's
     /// qwen2.5-coder) are advertised as tool-capable yet emit the call as plain text in
-    /// 'content' with tool_calls null - that silently breaks Copilot. We use
-    /// tool_choice "auto" with a generous token budget on purpose: "required" is
-    /// unreliable on Ollama for thinking models, and a small budget makes a reasoning
-    /// model burn its tokens before it can emit the call. Best-effort: anything other
-    /// than a clear "emits-as-text" failure is reported as inconclusive (don't block).</summary>
-    internal (ToolStatus Status, string Detail) ProbeToolCalling(string baseUrl, string model)
+    /// 'content' with tool_calls null - that silently breaks Copilot. We use tool_choice
+    /// "auto" with a generous token budget on purpose: "required" is unreliable on Ollama
+    /// for thinking models, and a small budget makes a reasoning model burn its tokens
+    /// thinking before it can emit the call (finish_reason "length" -> truncated, undispatchable
+    /// tool call). This substantive prompt also surfaces *conditional* reasoners (e.g.
+    /// gemma) that the trivial warm-up prompt misses, so we return a Reasoning flag for
+    /// the caller to route via the Responses wire. Best-effort: anything other than a clear
+    /// "emits-as-text" failure is reported as inconclusive (don't block).</summary>
+    internal (ToolStatus Status, string Detail, bool Reasoning) ProbeToolCalling(string baseUrl, string model)
     {
         try
         {
@@ -381,17 +384,20 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
                 "\"messages\":[{\"role\":\"user\",\"content\":\"Use the get_time tool to report the current time.\"}]," +
                 "\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_time\"," +
                 "\"description\":\"Get the current time\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}}]," +
-                "\"tool_choice\":\"auto\",\"max_tokens\":256,\"temperature\":0}";
+                "\"tool_choice\":\"auto\",\"max_tokens\":512,\"temperature\":0}";
             var (ok, status, body) = http.PostJson($"{baseUrl}/chat/completions", payload, 120_000);
-            if (!ok) return (ToolStatus.Inconclusive, $"HTTP {status}");
-            if (HasToolCall(body)) return (ToolStatus.Ok, "native tool calling OK");
+            if (!ok) return (ToolStatus.Inconclusive, $"HTTP {status}", false);
+            bool reasoning = !string.IsNullOrWhiteSpace(ExtractMessageField(body, "reasoning"))
+                          || !string.IsNullOrWhiteSpace(ExtractMessageField(body, "reasoning_content"));
+            if (HasToolCall(body)) return (ToolStatus.Ok, "native tool calling OK", reasoning);
             if (LooksLikeToolCallText(ExtractMessageField(body, "content")))
                 return (ToolStatus.NotNative,
                     "model emits tool calls as plain text (tool_calls is empty), which breaks Copilot's " +
-                    "agentic loop. Pick a model with native tool calling (e.g. granite4, qwen3, llama3.2).");
-            return (ToolStatus.Inconclusive, "model did not call the tool");
+                    "agentic loop. Pick a model with native tool calling (e.g. granite4, qwen3, llama3.2).",
+                    reasoning);
+            return (ToolStatus.Inconclusive, "model did not call the tool", reasoning);
         }
-        catch (Exception ex) { return (ToolStatus.Inconclusive, (ex.InnerException ?? ex).Message); }
+        catch (Exception ex) { return (ToolStatus.Inconclusive, (ex.InnerException ?? ex).Message, false); }
     }
 
     /// <summary>True if the chat/completions response carries a non-empty tool_calls array.</summary>

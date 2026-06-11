@@ -445,10 +445,17 @@ internal static class Program
                 case Providers.WarmStatus.Ok when !useResponses:
                     // Copilot's agentic loop needs native tool calling. Some models are
                     // advertised as tool-capable but emit the call as plain text (breaks
-                    // Copilot). Reasoning models routed via Responses are skipped: that
-                    // wire handles tools differently and the chat probe is flaky for them.
+                    // Copilot). The probe's substantive prompt also surfaces *conditional*
+                    // reasoners (e.g. gemma) the trivial warm-up missed: those must use the
+                    // Responses wire, or their reasoning burns the chat output budget and
+                    // truncates the tool call (finish_reason "length" -> undispatchable).
                     var tool = AnsiConsole.Status().Start("Checking tool calling...", _ => providers.ProbeToolCalling(baseUrl, m.Model));
-                    if (tool.Status == Providers.ToolStatus.NotNative)
+                    if (tool.Reasoning && providers.SupportsResponses(baseUrl))
+                    {
+                        useResponses = true;
+                        AnsiConsole.MarkupLine("[teal]Reasoning model detected[/] [dim](during tool probe)[/] — using the OpenAI [white]Responses[/] wire API [dim](/v1/responses)[/].");
+                    }
+                    else if (tool.Status == Providers.ToolStatus.NotNative)
                     {
                         AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(tool.Detail)}");
                         if (interactive && !AnsiConsole.Prompt(new ConfirmationPrompt("Launch Copilot anyway?") { DefaultValue = false }))

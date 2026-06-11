@@ -46,9 +46,9 @@ public sealed class ProvidersTests
     }
 
     [TestMethod]
-    public void LooksGarbled_TooFewWords_ReturnsTrue()
+    public void LooksGarbled_MostlyDigitsShortString_ReturnsTrue()
     {
-        // Arrange
+        // Arrange: low letter ratio even though it is short.
         const string text = "alpha 123 456";
 
         // Act
@@ -57,6 +57,14 @@ public sealed class ProvidersTests
         // Assert
         result.Should().BeTrue();
     }
+
+    [TestMethod]
+    [DataRow("Ready to assist!")]
+    [DataRow("Ready to go.")]
+    [DataRow("Yes, I am ready.")]
+    [DataRow("I'm ready to help.")]
+    public void LooksGarbled_TerseValidReply_ReturnsFalse(string text) =>
+        Providers.LooksGarbled(text).Should().BeFalse();
 
     [TestMethod]
     public void LooksGarbled_VeryShortString_ReturnsFalse()

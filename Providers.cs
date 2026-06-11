@@ -463,10 +463,11 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
         }
     }
 
-    // Heuristic: a coherent answer to the warm-up prompt is prose with many real
-    // words and mostly letters. Flag short repeating units, a low letter ratio, or
-    // too few word-like tokens. (Avoids char-diversity, which is naturally low for
-    // longer English prose and caused false positives.)
+    // Heuristic: a coherent answer to the warm-up prompt is prose that is mostly
+    // letters. Flag short repeating units or a low letter ratio. (Avoids a word-count
+    // rule - it false-flagged terse-but-valid replies like "Ready to assist!" where
+    // short connectives aren't counted - and char-diversity, which is naturally low for
+    // longer English prose. Both caused false positives.)
     internal static bool LooksGarbled(string t)
     {
         string nospace = new(t.Where(c => !char.IsWhiteSpace(c)).ToArray());
@@ -483,18 +484,9 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
             if (allSame) return true;
         }
 
-        // Mostly digits/punctuation, e.g. "90. 111 161 .222 33r 440 666".
+        // Mostly digits/punctuation, e.g. "90. 111 161 .222 33r 440 666" or "alpha 123 456".
         int letters = nospace.Count(char.IsLetter);
-        if (nospace.Length >= 16 && (double)letters / nospace.Length < 0.55) return true;
-
-        // Too few word-like tokens (runs of >=3 letters). Real prose has several.
-        int words = 0, run = 0;
-        foreach (char c in t + " ")
-        {
-            if (char.IsLetter(c)) { if (++run == 3) words++; }
-            else run = 0;
-        }
-        if (t.Length >= 12 && words < 3) return true;
+        if ((double)letters / nospace.Length < 0.55) return true;
 
         return false;
     }

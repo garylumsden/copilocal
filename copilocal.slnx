@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="copilocal.csproj" />
+  <Project Path="tests/Copilocal.Tests/Copilocal.Tests.csproj" />
 </Solution>

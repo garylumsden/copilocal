@@ -1,0 +1,13 @@
+# Build output
+bin/
+obj/
+publish/
+*.user
+
+# Rider / VS
+.idea/
+.vs/
+
+# Logs / temp
+*.log
+*.tmp

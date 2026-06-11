@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Gjlumsden.Copilocal
+PackageVersion: 0.1.0
+InstallerType: portable
+Commands:
+  - copilocal
+ReleaseDate: 2026-06-11
+# x64 hash is the SHA256 of bin/Release/net10.0/win-x64/publish/copilocal.exe for this build.
+# Upload that exact file as the release asset, or let wingetcreate/komac recompute both
+# hashes from the published GitHub Release. Fill <SHA256_ARM64> after building win-arm64.
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-x64.exe
+    InstallerSha256: 26440CC4FC7201DE63D83402159E7A15D53D36E84757EC96D21FD18DB5113164
+  - Architecture: arm64
+    InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-arm64.exe
+    InstallerSha256: <SHA256_ARM64>
+ManifestType: installer
+ManifestVersion: 1.6.0

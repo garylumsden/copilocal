@@ -5,16 +5,12 @@ InstallerType: portable
 Commands:
   - copilocal
 ReleaseDate: 2026-06-15
-# x64 hash is the SHA256 of bin/Release/net10.0/win-x64/publish/copilocal.exe for this build.
-# Upload that exact file as the release asset, or let wingetcreate/komac recompute both
-# hashes from the published GitHub Release. Fill <SHA256_ARM64> after building win-arm64.
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-x64.exe
-    InstallerSha256: D9870C07FE1A7ECB9C1ED3AA9F61344D36CAFA0A1C23F4EB54637EE631D423D7
+    InstallerSha256: 0EF75D92262281EEEB898A02A7AA537768FA0BE5612025B01D0B05EDD562D7A7
   - Architecture: arm64
     InstallerUrl: https://github.com/garylumsden/copilocal/releases/download/v0.1.0/copilocal-win-arm64.exe
-    # Fill this with the SHA256 of the published arm64 release asset before submission.
-    InstallerSha256: <SHA256_ARM64>
+    InstallerSha256: DCE62B805C4D5E3335A4FD83261E44DC96D07361AA2121A75C6D6995BE2C2D6F
 ManifestType: installer
 ManifestVersion: 1.12.0

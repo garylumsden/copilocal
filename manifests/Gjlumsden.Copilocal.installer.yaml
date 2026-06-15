@@ -4,7 +4,7 @@ PackageVersion: 0.1.0
 InstallerType: portable
 Commands:
   - copilocal
-# ReleaseDate: YYYY-MM-DD # Fill with the actual release date for v0.1.0.
+ReleaseDate: 2026-06-15
 # x64 hash is the SHA256 of bin/Release/net10.0/win-x64/publish/copilocal.exe for this build.
 # Upload that exact file as the release asset, or let wingetcreate/komac recompute both
 # hashes from the published GitHub Release. Fill <SHA256_ARM64> after building win-arm64.

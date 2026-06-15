@@ -76,7 +76,9 @@ internal sealed class ProcessRunner : IProcessRunner
 
     public string? Which(string exe)
     {
-        var (code, outp, _) = Run("where", exe, 5000);
+        // `where` is Windows; `which` is the POSIX equivalent on macOS/Linux.
+        string finder = OperatingSystem.IsWindows() ? "where" : "which";
+        var (code, outp, _) = Run(finder, exe, 5000);
         if (code != 0) return null;
         var first = outp.Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
         return string.IsNullOrWhiteSpace(first) ? null : first;

@@ -28,6 +28,8 @@ internal static class Program
         Banner.Draw();
         AnsiConsole.MarkupLine("[grey58 italic]      Pick a local model · launch GitHub Copilot CLI against it[/]\n");
 
+        EnsureCopilotCli(providers, installer, cli.Interactive);
+
         bool resuming = false;
         MenuItem? lastLaunched = null;   // to unload when switching models on continue
 
@@ -48,7 +50,7 @@ internal static class Program
             if (cli.Pick >= 1 && cli.Pick <= models.Count)
             {
                 var item = models[cli.Pick - 1];
-                if (!ContextGateOk(item, cli.Interactive, providers)) return 0;
+                if (!Preflight.Ok(item, cli.Interactive, providers)) return 0;
                 launcher.Launch(item, Options(cli, sessionId, resuming));
                 return launcher.LastExitCode;
             }
@@ -106,9 +108,9 @@ internal static class Program
                 continue;
             }
 
-            // Ollama context guard: if too small, warn and go back to the picker
-            // (don't kill the app) unless the user chooses to launch anyway.
-            if (!ContextGateOk(chosen, cli.Interactive, providers)) continue;
+            // Preflight guard: warn (and gate) on missing tool-calling or too-small context
+            // before launch; go back to the picker unless the user chooses to launch anyway.
+            if (!Preflight.Ok(chosen, cli.Interactive, providers)) continue;
 
             // Continuing with a different model: unload the previous one to free its VRAM.
             if (lastLaunched is not null && (lastLaunched.Provider != chosen.Provider || lastLaunched.Model != chosen.Model))
@@ -133,6 +135,37 @@ internal static class Program
 
     static LaunchOptions Options(CommandLineArgs cli, string? sessionId, bool resuming) =>
         new(cli.DryRun, cli.Interactive, cli.Offline, sessionId, cli.SessionName, resuming, cli.CopilotArgs);
+
+    const string CopilotDocsUrl = "https://github.com/github/copilot-cli";
+
+    // copilocal launches `copilot`, so a missing CLI means nothing works. Offer to install it
+    // (winget, Windows) at startup; on other OSes or non-interactive runs just point at the docs.
+    static void EnsureCopilotCli(Providers providers, ProviderInstaller installer, bool interactive)
+    {
+        if (providers.HasCopilot) return;
+
+        AnsiConsole.WriteLine();
+        AnsiConsole.Write(new Panel(
+                "[yellow]GitHub Copilot CLI (`copilot`) isn't on your PATH.[/]\n" +
+                "copilocal launches it once you pick a model — it won't work without it.\n\n" +
+                $"[dim]Docs:[/] [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]")
+            .Header("Copilot CLI not found").BorderColor(Color.Yellow).RoundedBorder());
+
+        if (!interactive || !OperatingSystem.IsWindows())
+        {
+            AnsiConsole.MarkupLine("[dim]Install it (e.g. winget on Windows, Homebrew on macOS), then re-run copilocal.[/]");
+            return;
+        }
+
+        if (!AnsiConsole.Prompt(new ConfirmationPrompt("Install GitHub Copilot CLI now? [dim](winget GitHub.Copilot)[/]") { DefaultValue = true }))
+            return;
+
+        bool ok = false;
+        AnsiConsole.Status().Start("Installing GitHub Copilot CLI (winget)...", _ => ok = installer.InstallCopilot());
+        AnsiConsole.MarkupLine(ok
+            ? "[green]✓[/] Copilot CLI installed. [dim]Restart your terminal (or re-run copilocal) so[/] [white]copilot[/] [dim]is on PATH, then sign in by running[/] [white]copilot[/][dim].[/]"
+            : $"[red]✗[/] Install failed. Install manually: [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]");
+    }
 
     static void ShowSessionSaved(string sessionId, string? sessionName)
     {
@@ -170,37 +203,6 @@ internal static class Program
             .Header($"Add a model for {Markup.Escape(p.Name)}").BorderColor(Color.Teal).RoundedBorder());
         AnsiConsole.Markup("[grey58]Press Enter to continue…[/]");
         Console.ReadLine();
-    }
-
-    // ---------------- Ollama context gate ----------------
-
-    // OLLAMA_CONTEXT_LENGTH governs the context Ollama loads models at; unset means a
-    // 4096 default, and anything below MinOllamaCtx is too small for Copilot's prompt
-    // (empty replies / loops / 400). Warn when unset or too low and, interactively, let
-    // the user launch anyway. Returns true if launch should proceed.
-    static bool ContextGateOk(MenuItem m, bool interactive, Providers providers)
-    {
-        if (m.Provider != "Ollama") return true;
-        int ctx = providers.OllamaContextLength();
-        if (ctx >= Providers.MinOllamaCtx) return true;
-        WarnOllamaContext(ctx);
-        if (!interactive) return false;
-        return AnsiConsole.Prompt(new ConfirmationPrompt("Launch anyway?") { DefaultValue = false });
-    }
-
-    static void WarnOllamaContext(int ctx)
-    {
-        string state = ctx == 0
-            ? "[yellow]OLLAMA_CONTEXT_LENGTH is not set[/], so Ollama defaults to a 4096-token context."
-            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {ctx}[/] — below the {Providers.MinOllamaCtx} copilocal considers safe.";
-        AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Panel(
-                state + "\n" +
-                "Copilot's system prompt + tools are larger, so the prompt gets truncated —\n" +
-                "you'll see blank replies, a \"continue\" loop, or [white]400 invalid message content type: <nil>[/].\n\n" +
-                "[dim]Set a roomier context (PowerShell), then restart Ollama and re-run copilocal:[/]\n" +
-                "  [white]setx OLLAMA_CONTEXT_LENGTH 131072[/]   [dim](clamped to each model's max)[/]")
-            .Header("Ollama context too small").BorderColor(Color.Yellow).RoundedBorder());
     }
 
     // ---------------- helpers ----------------

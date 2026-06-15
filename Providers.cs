@@ -44,6 +44,10 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
     internal bool HasFoundry => File.Exists(FoundryExe);
     internal bool HasLmStudio => File.Exists(LmsExe) || File.Exists(LmStudioApp);
 
+    /// <summary>True when the GitHub Copilot CLI (`copilot`) is resolvable on PATH — the tool
+    /// copilocal ultimately launches.</summary>
+    internal bool HasCopilot => proc.Which("copilot") is not null;
+
     // ---------------- model gathering ----------------
 
     // Discovery commands are local and fast when warm (<0.5s) but a provider whose
@@ -98,14 +102,18 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
         return items;
     }
 
-    // ---------------- Ollama context check ----------------
+    // ---------------- context checks ----------------
     //
-    // Ollama loads models at OLLAMA_CONTEXT_LENGTH, defaulting to just 4096 when unset.
-    // Copilot's prompt + tools are larger, so a too-small (or unset) window truncates the
-    // prompt -> empty replies, a "continue" loop, and Ollama's
-    // "400 invalid message content type: <nil>". We warn when it's unset or below the floor.
+    // Copilot's system prompt + tool schemas are large (often 20k+ tokens). A model whose
+    // context window is smaller truncates the prompt -> empty/garbled replies, a "continue"
+    // loop, Ollama's "400 invalid message content type: <nil>", or Foundry's "input_ids size
+    // ... exceeds max length". MinContext is the floor below which copilocal warns.
+    //
+    // Per provider: Ollama loads models at OLLAMA_CONTEXT_LENGTH (default 4096 when unset);
+    // LM Studio is read from its native REST API; Foundry NPU/OpenVINO variants are compiled
+    // with a small fixed context (e.g. 4224) read from `foundry model info`.
 
-    internal const int MinOllamaCtx = 16384;
+    internal const int MinContext = 16384;
 
     /// <summary>Configured OLLAMA_CONTEXT_LENGTH, or 0 when unset/invalid.</summary>
     internal int OllamaContextLength() =>
@@ -113,7 +121,7 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
 
     /// <summary>Effective context window (tokens) the model will serve, or 0 if unknown.
     /// Ollama uses OLLAMA_CONTEXT_LENGTH (default 4096); LM Studio is read from its native
-    /// REST API (loaded context if loaded, else the model's max); Foundry is unknown.</summary>
+    /// REST API (loaded context if loaded, else the model's max); Foundry from `model info`.</summary>
     internal int ModelContextLength(MenuItem m)
     {
         try
@@ -125,13 +133,37 @@ internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
                     return c > 0 ? c : 4096;
                 case "LM Studio":
                     return LmStudioContextLength(m.Model, m.BaseUrl);
+                case "Foundry":
+                    return FoundryContextLength(m);
                 default:
-                    return 0;   // Foundry / unknown
+                    return 0;   // unknown
             }
         }
         catch (Exception)
         {
             // best-effort: unknown context should leave Copilot defaults intact.
+            return 0;
+        }
+    }
+
+    /// <summary>Foundry's compiled context window for the model, via `foundry model info -o json`
+    /// (its `contextLength`), or 0 if unknown. NPU/OpenVINO variants report a small fixed value
+    /// (e.g. 4224) that is far too small for Copilot's prompt.</summary>
+    int FoundryContextLength(MenuItem m)
+    {
+        try
+        {
+            string alias = m.LoadAlias ?? m.Model;
+            var (code, outp, _) = proc.Run(FoundryExe, $"model info {alias} -o json", DiscoverTimeoutMs);
+            if (code != 0) return 0;
+            int s = outp.IndexOf('{'); int e = outp.LastIndexOf('}');
+            if (s < 0 || e <= s) return 0;
+            using var d = JsonDocument.Parse(outp[s..(e + 1)]);
+            return d.RootElement.TryGetProperty("model", out var model) ? NumOrZero(model, "contextLength") : 0;
+        }
+        catch (Exception)
+        {
+            // best-effort: missing/changed model-info output leaves the context unknown.
             return 0;
         }
     }

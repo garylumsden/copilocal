@@ -42,9 +42,6 @@ internal sealed class Launcher(Providers providers, IProcessRunner proc)
         string baseUrl = AnsiConsole.Status().Start("Starting provider...", _ => providers.EnsureServer(m, preload: !opts.DryRun));
         m.BaseUrl = baseUrl;
 
-        if (!m.Tools)
-            AnsiConsole.MarkupLine("[yellow]Warning:[/] this model doesn't advertise tool-calling; Copilot CLI may error.");
-
         bool useResponses = false;
 
         // Validate the model actually responds (catches broken GPU EPs that 500 or emit garbage).

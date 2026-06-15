@@ -15,8 +15,16 @@ jobs:
         include:
           - rid: win-x64
             os: windows-latest
+            ext: ".exe"
           - rid: win-arm64
             os: windows-11-arm
+            ext: ".exe"
+          - rid: osx-arm64
+            os: macos-latest
+            ext: ""
+          - rid: osx-x64
+            os: macos-13
+            ext: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -25,20 +33,20 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Publish (Native AOT)
+      - name: Publish
         shell: pwsh
-        run: dotnet publish -c Release -r ${{ matrix.rid }} -o out
+        run: dotnet publish copilocal.csproj -c Release -r ${{ matrix.rid }} -o out
 
       - name: Stage artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item out/copilocal.exe "dist/copilocal-${{ matrix.rid }}.exe"
+          Copy-Item "out/copilocal${{ matrix.ext }}" "dist/copilocal-${{ matrix.rid }}${{ matrix.ext }}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: copilocal-${{ matrix.rid }}
-          path: dist/copilocal-${{ matrix.rid }}.exe
+          path: dist/copilocal-${{ matrix.rid }}${{ matrix.ext }}
 
   release:
     needs: build
@@ -53,12 +61,12 @@ jobs:
       - name: Compute SHA256
         run: |
           cd dist
-          sha256sum *.exe | tee SHA256SUMS.txt
+          sha256sum copilocal-* | tee SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.exe
+            dist/copilocal-*
             dist/SHA256SUMS.txt
           generate_release_notes: true

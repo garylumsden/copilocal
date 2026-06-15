@@ -252,6 +252,72 @@ public sealed class ProviderOrchestrationTests
     }
 
     [TestMethod]
+    public void ModelContextLength_FoundryModel_ReturnsContextFromModelInfo()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
+        proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json",
+            stdout: """noise {"model":{"alias":"phi4-mini","contextLength":131072,"supportsToolCalling":true}} trailing""");
+        var providers = new Providers(proc, new FakeHttpGateway());
+
+        // Act
+        var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
+
+        // Assert
+        result.Should().Be(131072);
+    }
+
+    [TestMethod]
+    public void ModelContextLength_FoundryNpuSmallContext_ReturnsSmallValue()
+    {
+        // Arrange: the NPU/OpenVINO failure mode - a tiny fixed context.
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
+        proc.AddRun(@"C:\fake\foundry.exe", "model info qwen2.5-coder-1.5b -o json",
+            stdout: """{"model":{"alias":"qwen2.5-coder-1.5b","contextLength":4224}}""");
+        var providers = new Providers(proc, new FakeHttpGateway());
+
+        // Act
+        var result = providers.ModelContextLength(FoundryItem("qwen npu", "qwen2.5-coder-1.5b"));
+
+        // Assert
+        result.Should().Be(4224);
+    }
+
+    [TestMethod]
+    public void ModelContextLength_FoundryModelInfoFails_ReturnsZero()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
+        proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", code: 1, stderr: "boom");
+        var providers = new Providers(proc, new FakeHttpGateway());
+
+        // Act
+        var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
+
+        // Assert
+        result.Should().Be(0);
+    }
+
+    [TestMethod]
+    public void ModelContextLength_FoundryMalformedJson_ReturnsZero()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
+        proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", stdout: "{ not json");
+        var providers = new Providers(proc, new FakeHttpGateway());
+
+        // Act
+        var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
+
+        // Assert
+        result.Should().Be(0);
+    }
+
+    [TestMethod]
     public void ProbeToolCalling_NativeToolCall_ReturnsOk()
     {
         // Arrange
@@ -515,12 +581,42 @@ public sealed class ProviderOrchestrationTests
         proc.RunCalls.Should().BeEmpty();
     }
 
+    [TestMethod]
+    public void HasCopilot_WhenCopilotOnPath_ReturnsTrue()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["copilot"] = @"C:\fake\copilot.exe";
+        var providers = new Providers(proc, new FakeHttpGateway());
+
+        // Act / Assert
+        providers.HasCopilot.Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void HasCopilot_WhenCopilotMissing_ReturnsFalse()
+    {
+        // Arrange
+        var providers = new Providers(new FakeProcessRunner(), new FakeHttpGateway());
+
+        // Act / Assert
+        providers.HasCopilot.Should().BeFalse();
+    }
+
     private static MenuItem LmStudioItem(string model) => new()
     {
         Kind = MenuItemKind.Model,
         Provider = "LM Studio",
         BaseUrl = "http://localhost:1234/v1",
         Model = model,
+    };
+
+    private static MenuItem FoundryItem(string model, string alias) => new()
+    {
+        Kind = MenuItemKind.Model,
+        Provider = "Foundry",
+        Model = model,
+        LoadAlias = alias,
     };
 
     private static string Completion(string content, string? reasoning = null, string? reasoningContent = null)

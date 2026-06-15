@@ -8,11 +8,21 @@
     <AssemblyName>copilocal</AssemblyName>
     <RootNamespace>Copilocal</RootNamespace>
     <Version>0.1.0</Version>
-
-    <!-- Native AOT: small, fast, self-contained single exe (x64 + arm64) -->
-    <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Windows (and plain build/run): Native AOT — small, fast, self-contained single exe. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == '' or $(RuntimeIdentifier.StartsWith('win'))">
+    <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
+  </PropertyGroup>
+
+  <!-- macOS/Linux: Native AOT can't cross-compile from a Windows host, so publish a
+       self-contained single file instead. (On a macOS runner this still produces a working,
+       fully self-contained binary; no .NET runtime required.) -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and !$(RuntimeIdentifier.StartsWith('win'))">
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>

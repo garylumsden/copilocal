@@ -15,6 +15,10 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         };
     }
 
+    /// <summary>Install the GitHub Copilot CLI (`copilot`) via winget. Windows-only; returns
+    /// false when winget is unavailable (e.g. on macOS, where the user installs it themselves).</summary>
+    internal bool InstallCopilot() => Winget("GitHub.Copilot");
+
     bool Winget(string id)
     {
         if (proc.Which("winget") is null) return false;

@@ -75,21 +75,34 @@ but that's **one model per session**, set by hand. copilocal turns it into a pic
 
 ## Requirements
 
-- **GitHub Copilot CLI** (`copilot` on `PATH`) — https://docs.github.com/copilot/how-tos/copilot-cli
+- **GitHub Copilot CLI** (`copilot` on `PATH`) — https://github.com/github/copilot-cli
+  (on Windows copilocal can install it for you at startup via winget; on macOS install it
+  yourself, e.g. with Homebrew)
 - At least one of: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai)
-  (copilocal can install these for you)
-- Windows x64 or ARM64 (single self-contained exe; no .NET runtime required)
+  (copilocal can install these for you on Windows)
+- Windows x64 / ARM64, or macOS arm64 / x64 — a single self-contained binary; no .NET runtime required
 
 ## Install
 
-### winget
+### winget (Windows)
 ```powershell
 winget install Gjlumsden.Copilocal
 ```
 
-### Manual
-Download `copilocal-<arch>.exe` from [Releases](https://github.com/garylumsden/copilocal/releases),
-put it on your `PATH`.
+### Manual (Windows / macOS)
+Download the binary for your platform from [Releases](https://github.com/garylumsden/copilocal/releases)
+and put it on your `PATH`:
+
+- **Windows:** `copilocal-win-x64.exe` / `copilocal-win-arm64.exe`
+- **macOS:** `copilocal-osx-arm64` / `copilocal-osx-x64` — then make it runnable:
+  ```bash
+  chmod +x copilocal-osx-arm64
+  xattr -d com.apple.quarantine copilocal-osx-arm64   # clear Gatekeeper (unsigned binary)
+  ```
+
+> On **macOS**, copilocal discovers and launches your local providers and Copilot CLI, but
+> the one-click **install** flows (winget / Add-AppxPackage) are Windows-only — install
+> Copilot CLI and the runtimes yourself there.
 
 ## Usage
 
@@ -133,24 +146,31 @@ COPILOT_PROVIDER_WIRE_API   responses  (only for reasoning models, see below)
 ```
 
 > Models must support **tool calling** and **streaming** to work well with Copilot CLI.
-> copilocal flags models that don't advertise tool calling, and—at launch—probes the chosen
-> model to catch ones that emit tool calls as plain text instead of native `tool_calls`
-> (e.g. Ollama's `qwen2.5-coder`), which silently breaks Copilot's agentic loop.
+> Before launch copilocal runs **preflight guards**: it flags models that don't advertise
+> tool calling, checks the model's **context window** is big enough for Copilot's large
+> prompt, and—at launch—probes the chosen model to catch ones that emit tool calls as plain
+> text instead of native `tool_calls` (e.g. Ollama's `qwen2.5-coder`), which silently breaks
+> Copilot's agentic loop. Interactively you can override a warning; a non-interactive
+> `--pick` is blocked so it fails fast with a clear reason.
 
-### Reasoning models & Ollama context
+### Reasoning models & context windows
 
-Two gotchas copilocal now handles for you:
+A few gotchas copilocal now handles for you:
 
 - **Reasoning models** (e.g. `gpt-oss`) reply in a `reasoning` field and leave `content`
   empty on the chat/completions wire — Copilot then loops and Ollama returns
   `400 invalid message content type: <nil>`. When the warm-up detects a reasoning model
   and the endpoint exposes `/v1/responses` (Ollama, LM Studio do), copilocal switches it
   to the OpenAI **Responses** wire API (`COPILOT_PROVIDER_WIRE_API=responses`).
-- **Ollama's default context is 4096 tokens** (when `OLLAMA_CONTEXT_LENGTH` isn't set).
-  Copilot's prompt + tools don't fit, giving blank replies / loops / 400. If the env var
-  is unset **or below 16384**, copilocal warns when you pick an Ollama model and asks
-  before launching (default **No**, returns you to the picker). Fix it with
-  `setx OLLAMA_CONTEXT_LENGTH 131072` (clamped per model's max) then restart Ollama.
+- **Context too small for Copilot's prompt.** Copilot's system prompt + tools run to 20k+
+  tokens, so a small window truncates it (blank replies / loops / 400). copilocal reads each
+  provider's effective context and warns below **16384** tokens:
+  - **Ollama** loads at `OLLAMA_CONTEXT_LENGTH` (default **4096** when unset). Fix with
+    `setx OLLAMA_CONTEXT_LENGTH 131072` (clamped per model's max), then restart Ollama.
+  - **Foundry Local** NPU/OpenVINO variants are compiled with a small fixed context (often
+    **4224**), which overflows as `input_ids size … exceeds max length`. Run the model on
+    Ollama or LM Studio (GPU/CPU, large context) instead — the NPU build can't be widened.
+  - **LM Studio** uses the model's loaded/max context; load it with a larger context length.
 
 ## Recommended models
 

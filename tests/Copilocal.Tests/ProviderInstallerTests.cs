@@ -72,6 +72,41 @@ public sealed class ProviderInstallerTests
     }
 
     [TestMethod]
+    public void InstallCopilot_WingetSuccess_RunsGitHubCopilotInstall()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["winget"] = @"C:\fake\winget.exe";
+        var installer = new ProviderInstaller(proc, new FakeHttpGateway());
+
+        // Act
+        var result = installer.InstallCopilot();
+
+        // Assert
+        result.Should().BeTrue();
+        proc.RunCalls.Should().ContainSingle()
+            .Which.Should().Be(new FakeProcessRunner.RunCall(
+                "winget",
+                "install --id GitHub.Copilot -e --silent --accept-source-agreements --accept-package-agreements",
+                600_000));
+    }
+
+    [TestMethod]
+    public void InstallCopilot_WingetMissing_ReturnsFalseWithoutRun()
+    {
+        // Arrange
+        var proc = new FakeProcessRunner();
+        var installer = new ProviderInstaller(proc, new FakeHttpGateway());
+
+        // Act
+        var result = installer.InstallCopilot();
+
+        // Assert
+        result.Should().BeFalse();
+        proc.RunCalls.Should().BeEmpty();
+    }
+
+    [TestMethod]
     public void Install_FoundrySuccess_DownloadsMsixAndRunsAddAppxPackage()
     {
         // Arrange

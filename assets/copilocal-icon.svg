@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">copilocal icon</title>
+  <desc id="desc">Square app icon with terminal prompt and local model nodes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1532"/>
+      <stop offset="100%" stop-color="#18306a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#42e8b4"/>
+      <stop offset="100%" stop-color="#56b3ff"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="72" y="72" width="880" height="880" rx="220" fill="url(#bg)"/>
+  <rect x="72" y="72" width="880" height="880" rx="220" fill="none" stroke="#36579a" stroke-width="8"/>
+
+  <circle cx="512" cy="512" r="302" fill="none" stroke="#3f63ab" stroke-width="22"/>
+  <circle cx="512" cy="512" r="248" fill="none" stroke="#4d7bd5" stroke-width="8" stroke-dasharray="10 20" opacity="0.8"/>
+
+  <rect x="296" y="340" width="432" height="308" rx="42" fill="#0a122a" stroke="#5f8ee8" stroke-width="10"/>
+  <rect x="296" y="340" width="432" height="64" rx="34" fill="#142654"/>
+  <circle cx="336" cy="372" r="10" fill="#ff6b6b"/>
+  <circle cx="368" cy="372" r="10" fill="#ffd166"/>
+  <circle cx="400" cy="372" r="10" fill="#42e8b4"/>
+
+  <polyline points="372,470 432,520 372,570" fill="none" stroke="url(#accent)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="470" y1="572" x2="610" y2="572" stroke="#9ae1ff" stroke-width="22" stroke-linecap="round"/>
+
+  <circle cx="226" cy="512" r="42" fill="#42e8b4"/>
+  <circle cx="798" cy="420" r="34" fill="#56b3ff"/>
+  <circle cx="798" cy="604" r="34" fill="#56b3ff"/>
+  <line x1="268" y1="512" x2="296" y2="512" stroke="#72ffd4" stroke-width="14" stroke-linecap="round"/>
+  <line x1="728" y1="420" x2="764" y2="420" stroke="#8ac6ff" stroke-width="12" stroke-linecap="round"/>
+  <line x1="728" y1="604" x2="764" y2="604" stroke="#8ac6ff" stroke-width="12" stroke-linecap="round"/>
+</svg>

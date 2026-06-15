@@ -17,6 +17,14 @@ links to each tool's docs so you can decide).
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![platform: Windows · macOS](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS-0078D6)
 
+<p align="center">
+  <img src="assets/copilocal-hero.svg" alt="copilocal hero image showing local runtimes routing into Copilot CLI" width="920" />
+</p>
+
+<p align="center">
+  <img src="assets/copilocal-icon.svg" alt="copilocal app icon" width="104" />
+</p>
+
 > ⚠️ **Not affiliated with GitHub or Microsoft.** copilocal is an independent,
 > community-built tool. It is **not** affiliated with, endorsed by, or sponsored by
 > GitHub, Microsoft, OpenAI, Ollama, or LM Studio. It simply launches the official
@@ -54,7 +62,8 @@ winget install Gjlumsden.Copilocal
 
 # 2. Prerequisites (install separately):
 #    - GitHub Copilot CLI on PATH:   copilot --version
-#    - A local runtime + a model, e.g. Ollama:
+#    - Optional now: local runtime + model (you can also install a runtime from inside copilocal on launch)
+#      e.g. Ollama:
 ollama pull qwen2.5-coder:7b
 
 # 3. Ollama only — give Copilot's prompt room (64k–128k if memory allows):
@@ -63,6 +72,9 @@ setx OLLAMA_CONTEXT_LENGTH 131072         # then restart Ollama
 # 4. Launch
 copilocal
 ```
+
+No local runtime installed yet? On **Windows**, just run `copilocal` and choose
+**⚙ Install / manage providers** to install Ollama / Foundry Local / LM Studio during startup.
 
 Pick a model with **↑/↓** and **Enter**. copilocal starts the provider if needed, warms
 the model up, sets the BYOK env vars, and launches `copilot` against it. When Copilot

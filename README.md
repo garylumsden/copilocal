@@ -31,25 +31,31 @@ links to each tool's docs so you can decide).
 > **GitHub Copilot CLI** that *you* install separately. See
 > [Disclaimer & trademarks](#disclaimer--trademarks).
 
-```
- ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗  ██████╗ █████╗ ██╗
-██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗██╔════╝██╔══██╗██║
-██║     ██║   ██║██████╔╝██║██║     ██║   ██║██║     ███████║██║
-██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║██║     ██╔══██║██║
-╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝╚██████╗██║  ██║███████╗
+```text
+(startup animation: icon flies in left→right, reveals the wordmark, then settles on the right)
+
+ ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗  ██████╗ █████╗ ██╗       ╭─════════════─╮
+██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗██╔════╝██╔══██╗██║       │  ┄┄┄┄┄┄┄┄┄┄  ├─●
+██║     ██║   ██║██████╔╝██║██║     ██║   ██║██║     ███████║██║     ●─┤   >_         │
+██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║██║     ██╔══██║██║       │  ┄┄┄┄┄┄┄┄┄┄  ├─●
+╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝╚██████╗██║  ██║███████╗   ╰─════════════─╯
  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝
-     Pick a local model · launch GitHub Copilot CLI against it
+      Pick a local model · launch GitHub Copilot CLI against it
 
 Discovering local models…
   ✓ Ollama — 2 models
+  ✓ Foundry Local — 2 models
   ✓ LM Studio — 1 model
 
 Select a local model  (↑/↓, Enter to launch):
   Ollama
->   Ollama     qwen2.5-coder:7b
-    Ollama     llama3.2:3b
+>   Ollama        qwen2.5-coder:7b
+    Ollama        llama3.2:3b
+  Foundry Local
+    Foundry Local qwen2.5-coder-7b-generic-gpu
+    Foundry Local phi-4-mini
   LM Studio
-    LM Studio  qwen3-0.6b
+    LM Studio     qwen3-0.6b
   ⚙  Configure launch options
   ✖  Quit
 ```

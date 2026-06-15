@@ -630,6 +630,62 @@ public sealed class ProviderOrchestrationTests
         providers.ModelContextLength(LmStudioItem("target")).Should().Be(0);
     }
 
+    [TestMethod]
+    public void ModelContextLength_OllamaLoaded_ReturnsLoadedContext()
+    {
+        // Arrange: model is loaded -> /api/ps is the ground truth (env/max irrelevant).
+        var http = new FakeHttpGateway();
+        http.AddGet("http://localhost:11434/api/ps",
+            """{"models":[{"name":"qwen2.5-coder:7b","context_length":32768}]}""");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        // Act / Assert
+        providers.ModelContextLength(OllamaItem("qwen2.5-coder:7b")).Should().Be(32768);
+    }
+
+    [TestMethod]
+    public void ModelContextLength_OllamaNotLoaded_ClampsConfiguredToModelMax()
+    {
+        // Arrange: not loaded; OLLAMA_CONTEXT_LENGTH is huge but the model's max is small,
+        // so Ollama would serve the max -> copilocal must report the clamped value.
+        var http = new FakeHttpGateway();
+        http.AddGet("http://localhost:11434/api/ps", """{"models":[]}""");
+        http.AddPost("http://localhost:11434/api/show", ok: true, status: 200,
+            body: """{"model_info":{"qwen2.context_length":8192}}""");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        string? prev = Environment.GetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH");
+        try
+        {
+            Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", "131072");
+
+            // Act / Assert
+            providers.ModelContextLength(OllamaItem("qwen2.5-coder:7b")).Should().Be(8192);
+        }
+        finally { Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", prev); }
+    }
+
+    [TestMethod]
+    public void ModelContextLength_OllamaNotLoaded_NoEnv_DefaultsTo4096()
+    {
+        // Arrange: not loaded, env unset -> Ollama's 4096 default (clamped to a larger max).
+        var http = new FakeHttpGateway();
+        http.AddGet("http://localhost:11434/api/ps", """{"models":[]}""");
+        http.AddPost("http://localhost:11434/api/show", ok: true, status: 200,
+            body: """{"model_info":{"qwen2.context_length":32768}}""");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        string? prev = Environment.GetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH");
+        try
+        {
+            Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", null);
+
+            // Act / Assert
+            providers.ModelContextLength(OllamaItem("qwen2.5-coder:7b")).Should().Be(4096);
+        }
+        finally { Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", prev); }
+    }
+
     private static MenuItem LmStudioItem(string model) => new()
     {
         Kind = MenuItemKind.Model,
@@ -644,6 +700,14 @@ public sealed class ProviderOrchestrationTests
         Provider = "Foundry",
         Model = model,
         LoadAlias = alias,
+    };
+
+    private static MenuItem OllamaItem(string model) => new()
+    {
+        Kind = MenuItemKind.Model,
+        Provider = "Ollama",
+        BaseUrl = "http://localhost:11434/v1",
+        Model = model,
     };
 
     private static string Completion(string content, string? reasoning = null, string? reasoningContent = null)

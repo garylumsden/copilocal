@@ -126,12 +126,11 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// REST API (loaded context if loaded, else the model's max); Foundry from `model info`.</summary>
     internal int ModelContextLength(MenuItem m)
     {
-        // Each branch is self-protecting (env parse / inner try-catch), so no wrapper needed.
+        // Each branch is self-protecting (HTTP/JSON guarded), so no wrapper needed.
         switch (m.Provider)
         {
             case "Ollama":
-                int c = OllamaContextLength();
-                return c > 0 ? c : 4096;
+                return OllamaEffectiveContext(m);
             case "LM Studio":
                 return LmStudioContextLength(m.Model, m.BaseUrl);
             case "Foundry":
@@ -139,6 +138,76 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             default:
                 return 0;   // unknown
         }
+    }
+
+    /// <summary>Ollama's effective context (tokens) for the model. Prefers the actually-loaded
+    /// context from <c>/api/ps</c> (ground truth); otherwise what Ollama will load at —
+    /// OLLAMA_CONTEXT_LENGTH (default 4096) clamped to the model's trained max from <c>/api/show</c>.
+    /// This avoids assuming a flat 4096 and catches a large env var on a small-context model.</summary>
+    int OllamaEffectiveContext(MenuItem m)
+    {
+        string host = OllamaHost(m.BaseUrl);
+        int loaded = OllamaLoadedContext(host, m.Model);
+        if (loaded > 0) return loaded;
+        int env = OllamaContextLength();
+        int want = env > 0 ? env : 4096;
+        int max = OllamaModelMaxContext(host, m.Model);
+        return max > 0 ? Math.Min(want, max) : want;
+    }
+
+    static string OllamaHost(string? baseUrl)
+    {
+        string host = baseUrl ?? "http://localhost:11434/v1";
+        int i = host.IndexOf("/v1", StringComparison.Ordinal);
+        return i >= 0 ? host[..i] : host;
+    }
+
+    /// <summary>Context a model is currently loaded at, from Ollama's <c>/api/ps</c>, or 0 if it
+    /// isn't loaded or Ollama is unreachable.</summary>
+    int OllamaLoadedContext(string host, string model)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(http.GetString($"{host}/api/ps", 8_000));
+            if (d.RootElement.ValueKind != JsonValueKind.Object
+                || !d.RootElement.TryGetProperty("models", out var models)
+                || models.ValueKind != JsonValueKind.Array) return 0;
+            foreach (var el in models.EnumerateArray())
+            {
+                if (el.ValueKind != JsonValueKind.Object) continue;
+                if (el.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String
+                    && n.GetString() == model) return NumOrZero(el, "context_length");
+            }
+            return 0;
+        }
+        catch (HttpRequestException) { return 0; }
+        catch (JsonException) { return 0; }
+        catch (OperationCanceledException) { return 0; }
+        catch (InvalidOperationException) { return 0; }
+    }
+
+    /// <summary>Model's trained maximum context from Ollama's <c>/api/show</c> (the model_info
+    /// "&lt;arch&gt;.context_length"), or 0 if unknown. Ollama clamps any requested context to this.</summary>
+    int OllamaModelMaxContext(string host, string model)
+    {
+        try
+        {
+            var (ok, _, body) = http.PostJson($"{host}/api/show", "{\"model\":\"" + Json.Escape(model) + "\"}", 12_000);
+            if (!ok) return 0;
+            using var d = JsonDocument.Parse(body);
+            if (d.RootElement.ValueKind != JsonValueKind.Object
+                || !d.RootElement.TryGetProperty("model_info", out var info)
+                || info.ValueKind != JsonValueKind.Object) return 0;
+            foreach (var p in info.EnumerateObject())
+                if (p.Name.EndsWith(".context_length", StringComparison.Ordinal)
+                    && p.Value.ValueKind == JsonValueKind.Number && p.Value.TryGetInt32(out var n))
+                    return n;
+            return 0;
+        }
+        catch (HttpRequestException) { return 0; }
+        catch (JsonException) { return 0; }
+        catch (OperationCanceledException) { return 0; }
+        catch (InvalidOperationException) { return 0; }
     }
 
     /// <summary>Foundry's compiled context window for the model, via `foundry model info -o json`

@@ -55,8 +55,8 @@ internal static class Preflight
     {
         int env = providers.OllamaContextLength();
         string state = env == 0
-            ? "[yellow]OLLAMA_CONTEXT_LENGTH is not set[/], so Ollama defaults to a 4096-token context."
-            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/] — below the {ProviderHub.MinContext} copilocal considers safe.";
+            ? "[yellow]OLLAMA_CONTEXT_LENGTH is not set[/] and the context Ollama will load is small."
+            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/], but the effective context (clamped to the model's max) is below the {ProviderHub.MinContext} copilocal considers safe.";
         return state + "\n" +
             "Copilot's system prompt + tools are larger, so the prompt gets truncated —\n" +
             "you'll see blank replies, a \"continue\" loop, or [white]400 invalid message content type: <nil>[/].\n\n" +

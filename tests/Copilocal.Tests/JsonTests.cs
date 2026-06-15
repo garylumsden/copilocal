@@ -57,4 +57,31 @@ public sealed class JsonTests
         // Assert
         result.Should().BeEmpty();
     }
+
+    [TestMethod]
+    public void Escape_ControlCharacters_EscapesAsJsonEscapes()
+    {
+        // Arrange: a value with a newline, carriage return and tab would corrupt a JSON
+        // document if passed through verbatim.
+        const string value = "line1\nline2\r\tend";
+
+        // Act
+        var result = Json.Escape(value);
+
+        // Assert
+        result.Should().Be("line1\\nline2\\r\\tend");
+    }
+
+    [TestMethod]
+    public void Escape_OtherControlChar_EscapesAsUnicodeSequence()
+    {
+        // Arrange: NUL has no short escape, so it must become a \u00XX sequence.
+        const string value = "a\0b";
+
+        // Act
+        var result = Json.Escape(value);
+
+        // Assert
+        result.Should().Be("a\\u0000b");
+    }
 }

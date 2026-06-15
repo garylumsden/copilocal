@@ -4,7 +4,7 @@ using FluentAssertions;
 namespace Copilocal.Tests;
 
 [TestClass]
-public sealed class ProgramTests
+public sealed class LauncherTests
 {
     [TestMethod]
     public void TokenLimits_ConfigOverridesWin_ReturnsConfiguredLimits()
@@ -17,7 +17,7 @@ public sealed class ProgramTests
         };
 
         // Act
-        var result = Program.TokenLimits(config, ctx: 32_768);
+        var result = Launcher.TokenLimits(config, ctx: 32_768);
 
         // Assert
         result.Should().Be((123, 456));
@@ -30,7 +30,7 @@ public sealed class ProgramTests
         var config = new LaunchConfig();
 
         // Act
-        var result = Program.TokenLimits(config, ctx: 32_768);
+        var result = Launcher.TokenLimits(config, ctx: 32_768);
 
         // Assert
         result.Should().Be((24_064, 8_192));
@@ -43,7 +43,7 @@ public sealed class ProgramTests
         var config = new LaunchConfig();
 
         // Act
-        var result = Program.TokenLimits(config, ctx: 0);
+        var result = Launcher.TokenLimits(config, ctx: 0);
 
         // Assert
         result.Should().Be((0, 0));

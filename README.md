@@ -11,6 +11,11 @@ your shell.
 If a provider isn't installed, copilocal offers to install it (checkbox opt-in, with
 links to each tool's docs so you can decide).
 
+[![release](https://github.com/garylumsden/copilocal/actions/workflows/release.yml/badge.svg)](https://github.com/garylumsden/copilocal/actions/workflows/release.yml)
+[![winget](https://img.shields.io/badge/winget-Gjlumsden.Copilocal-blue)](https://github.com/garylumsden/copilocal/releases)
+[![license: MIT](https://img.shields.io/github/license/garylumsden/copilocal)](LICENSE)
+![platform: Windows x64 · ARM64](https://img.shields.io/badge/platform-Windows%20x64%20%C2%B7%20ARM64-0078D6)
+
 > ⚠️ **Not affiliated with GitHub or Microsoft.** copilocal is an independent,
 > community-built tool. It is **not** affiliated with, endorsed by, or sponsored by
 > GitHub, Microsoft, OpenAI, Ollama, or LM Studio. It simply launches the official
@@ -153,16 +158,20 @@ Models need **tool calling** (for Copilot's agentic loop) and ideally fit your V
 Small, fast, non-reasoning coders are the safest start; reasoning models work too
 (copilocal routes them via the Responses API automatically).
 
-| Use | Ollama | LM Studio |
-| --- | --- | --- |
-| Best small coder | `qwen2.5-coder:7b` | `qwen2.5-coder-7b-instruct` |
-| Lighter / faster | `qwen2.5-coder:3b`, `llama3.2:3b` | `llama-3.2-3b-instruct` |
-| Tiny (quick tests) | `llama3.2:1b` | `qwen3-0.6b` |
-| Recent / agentic | `granite4:3b`, `qwen3:4b` | `granite-4.0-h-tiny`, `phi-4-mini-instruct` |
+| Use | Ollama | Foundry Local | LM Studio |
+| --- | --- | --- | --- |
+| Best small coder | `qwen2.5-coder:7b` | `qwen2.5-coder-7b` | `qwen2.5-coder-7b-instruct` |
+| Lighter / faster | `qwen2.5-coder:3b`, `llama3.2:3b` | `qwen2.5-coder-1.5b`, `phi-4-mini` | `llama-3.2-3b-instruct` |
+| Tiny (quick tests) | `llama3.2:1b` | `qwen2.5-coder-0.5b` | `qwen3-0.6b` |
+| Recent / agentic | `granite4:3b`, `qwen3:4b` | `phi-4-mini`, `qwen2.5-7b` | `granite-4.0-h-tiny`, `phi-4-mini-instruct` |
 
 > Tags change fast — check the latest live: Ollama
-> [`ollama.com/library?sort=newest`](https://ollama.com/library?sort=newest), and
-> LM Studio's in-app **Discover** catalog.
+> [`ollama.com/library?sort=newest`](https://ollama.com/library?sort=newest),
+> Foundry with `foundry model list`, and LM Studio's in-app **Discover** catalog.
+
+> **NPU note:** Foundry Local auto-selects the best device for the loaded model. Its
+> `*-openvino-npu` variants (e.g. `qwen2.5-coder-7b`, `phi-4-mini`) run on a supported
+> Intel/Qualcomm **NPU**, freeing the GPU/CPU — handy on Copilot+ PCs and Core Ultra laptops.
 
 ### Example: tuning to your machine
 
@@ -237,6 +246,23 @@ dotnet publish -c Release -r win-arm64
 ```
 
 Requires the .NET 10 SDK. Output is a self-contained, Native-AOT single executable.
+
+> **Native AOT on Windows** needs the Visual Studio C++ toolchain (Desktop development
+> with C++) for the linker; `dotnet run`/`dotnet build` work without it.
+
+Run the test suite:
+
+```powershell
+dotnet test tests/Copilocal.Tests/Copilocal.Tests.csproj
+```
+
+## Contributing
+
+Issues and PRs are welcome. Please keep changes small and focused, run
+`dotnet build -c Debug` and `dotnet test` before opening a PR (both must be green), and
+match the existing style (interface-backed `IProcessRunner`/`IHttpGateway` for testability,
+hand-built JSON helpers so the build stays Native-AOT friendly). Report bugs and request
+features on the [issue tracker](https://github.com/garylumsden/copilocal/issues).
 
 ## License
 

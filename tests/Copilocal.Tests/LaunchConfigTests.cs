@@ -98,4 +98,55 @@ public sealed class LaunchConfigTests
         // Assert
         result.Should().Equal("--foo", "bar", "--name", "hello world", "standalone quoted");
     }
+
+    [TestMethod]
+    public void SaveThenLoad_RoundTripsAllFields()
+    {
+        // Arrange: persist to a temp path so the real ~/.copilocal/config.json is untouched.
+        string path = Path.Combine(Path.GetTempPath(), $"copilocal-cfg-{Guid.NewGuid():N}.json");
+        var config = new LaunchConfig
+        {
+            Flags = ["--yolo", "--banner"],
+            ReasoningEffort = "high",
+            MaxPromptTokens = 4096,
+            MaxOutputTokens = 1024,
+            // A value containing a quote and control char exercises correct JSON escaping.
+            ExtraArgs = "--name \"a\tb\"",
+        };
+
+        try
+        {
+            // Act
+            config.Save(path);
+            var loaded = LaunchConfig.Load(path);
+
+            // Assert
+            loaded.Flags.Should().BeEquivalentTo(config.Flags);
+            loaded.ReasoningEffort.Should().Be("high");
+            loaded.MaxPromptTokens.Should().Be(4096);
+            loaded.MaxOutputTokens.Should().Be(1024);
+            loaded.ExtraArgs.Should().Be("--name \"a\tb\"");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
+    public void Load_MissingFile_ReturnsDefaults()
+    {
+        // Arrange
+        string path = Path.Combine(Path.GetTempPath(), $"copilocal-missing-{Guid.NewGuid():N}.json");
+
+        // Act
+        var loaded = LaunchConfig.Load(path);
+
+        // Assert
+        loaded.Flags.Should().BeEmpty();
+        loaded.ReasoningEffort.Should().BeEmpty();
+        loaded.MaxPromptTokens.Should().Be(0);
+        loaded.MaxOutputTokens.Should().Be(0);
+        loaded.ExtraArgs.Should().BeEmpty();
+    }
 }

@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text;
 
 namespace Copilocal;
@@ -10,8 +11,10 @@ internal sealed class HttpGateway : IHttpGateway
     static HttpClient CreateHttp()
     {
         var c = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        // GitHub's API requires a User-Agent; harmless for local providers.
-        c.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("copilocal", "0.1"));
+        // GitHub's API requires a User-Agent; harmless for local providers. Derive the
+        // version from the assembly so it never drifts from the published build.
+        string version = typeof(HttpGateway).Assembly.GetName().Version?.ToString(3) ?? "0";
+        c.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("copilocal", version));
         return c;
     }
 

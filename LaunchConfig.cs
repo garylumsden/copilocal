@@ -53,13 +53,17 @@ internal sealed class LaunchConfig
     static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
     internal static string FilePath => Path.Combine(Dir, "config.json");
 
-    internal static LaunchConfig Load()
+    /// <summary>Load preferences from <paramref name="path"/> (defaults to <see cref="FilePath"/>).
+    /// The <paramref name="path"/> override keeps this unit-testable without touching the real
+    /// user config.</summary>
+    internal static LaunchConfig Load(string? path = null)
     {
+        path ??= FilePath;
         var c = new LaunchConfig();
         try
         {
-            if (!File.Exists(FilePath)) return c;
-            using var d = JsonDocument.Parse(File.ReadAllText(FilePath));
+            if (!File.Exists(path)) return c;
+            using var d = JsonDocument.Parse(File.ReadAllText(path));
             var r = d.RootElement;
             if (r.TryGetProperty("flags", out var fa) && fa.ValueKind == JsonValueKind.Array)
                 foreach (var el in fa.EnumerateArray())
@@ -76,26 +80,28 @@ internal sealed class LaunchConfig
         return c;
     }
 
-    internal void Save()
+    /// <summary>Persist preferences to <paramref name="path"/> (defaults to <see cref="FilePath"/>).
+    /// Uses <see cref="Utf8JsonWriter"/> so escaping is correct and AOT-safe (the reflection-based
+    /// serializer is unavailable under Native AOT).</summary>
+    internal void Save(string? path = null)
     {
+        path ??= FilePath;
         try
         {
-            Directory.CreateDirectory(Dir);
-            // Hand-build JSON: reflection-based JsonSerializer is disabled under AOT.
-            var sb = new StringBuilder();
-            sb.Append("{\n  \"flags\": [");
-            var ordered = Flags.OrderBy(f => f, StringComparer.Ordinal).ToList();
-            for (int i = 0; i < ordered.Count; i++)
-            {
-                sb.Append(i == 0 ? "\n    \"" : ",\n    \"");
-                sb.Append(Json.Escape(ordered[i])).Append('"');
-            }
-            sb.Append(ordered.Count > 0 ? "\n  ],\n" : "],\n");
-            sb.Append($"  \"reasoningEffort\": \"{Json.Escape(ReasoningEffort)}\",\n");
-            sb.Append($"  \"maxPromptTokens\": {MaxPromptTokens},\n");
-            sb.Append($"  \"maxOutputTokens\": {MaxOutputTokens},\n");
-            sb.Append($"  \"extraArgs\": \"{Json.Escape(ExtraArgs)}\"\n}}\n");
-            File.WriteAllText(FilePath, sb.ToString());
+            string? dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            using var stream = File.Create(path);
+            using var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+            w.WriteStartObject();
+            w.WriteStartArray("flags");
+            foreach (var f in Flags.OrderBy(f => f, StringComparer.Ordinal))
+                w.WriteStringValue(f);
+            w.WriteEndArray();
+            w.WriteString("reasoningEffort", ReasoningEffort);
+            w.WriteNumber("maxPromptTokens", MaxPromptTokens);
+            w.WriteNumber("maxOutputTokens", MaxOutputTokens);
+            w.WriteString("extraArgs", ExtraArgs);
+            w.WriteEndObject();
         }
         catch (Exception)
         {
@@ -103,14 +109,17 @@ internal sealed class LaunchConfig
         }
     }
 
-    /// <summary>Translate the config into copilot CLI arguments.</summary>
+    /// <summary>Translate the config into copilot CLI arguments. <paramref name="configuredMcpServers"/>
+    /// resolves the user's MCP server names (for the disable-user-mcps token); when omitted no
+    /// such flags are emitted. The config never reaches for providers/IO itself.</summary>
     internal List<string> ToArgs(Func<List<string>>? configuredMcpServers = null)
     {
+        var resolve = configuredMcpServers ?? (static () => new List<string>());
         var a = new List<string>();
         foreach (var f in Flags.OrderBy(f => f, StringComparer.Ordinal))
         {
             if (f == DisableUserMcpsToken)
-                foreach (var s in (configuredMcpServers ?? DefaultConfiguredMcpServers)()) a.Add($"--disable-mcp-server={s}");
+                foreach (var s in resolve()) a.Add($"--disable-mcp-server={s}");
             else
                 a.Add(f);
         }
@@ -119,9 +128,6 @@ internal sealed class LaunchConfig
         if (!string.IsNullOrWhiteSpace(ExtraArgs)) a.AddRange(SplitArgs(ExtraArgs));
         return a;
     }
-
-    static List<string> DefaultConfiguredMcpServers() =>
-        new Providers(new ProcessRunner(), new HttpGateway()).ConfiguredMcpServers();
 
     static string GetStr(JsonElement r, string name) =>
         r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";

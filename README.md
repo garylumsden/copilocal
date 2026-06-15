@@ -11,9 +11,10 @@ your shell.
 If a provider isn't installed, copilocal offers to install it (checkbox opt-in, with
 links to each tool's docs so you can decide).
 
+[![ci](https://github.com/garylumsden/copilocal/actions/workflows/ci.yml/badge.svg)](https://github.com/garylumsden/copilocal/actions/workflows/ci.yml)
 [![release](https://github.com/garylumsden/copilocal/actions/workflows/release.yml/badge.svg)](https://github.com/garylumsden/copilocal/actions/workflows/release.yml)
 [![winget](https://img.shields.io/badge/winget-Gjlumsden.Copilocal-blue)](https://github.com/garylumsden/copilocal/releases)
-[![license: MIT](https://img.shields.io/github/license/garylumsden/copilocal)](LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![platform: Windows · macOS](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS-0078D6)
 
 > ⚠️ **Not affiliated with GitHub or Microsoft.** copilocal is an independent,

@@ -186,7 +186,11 @@ A few gotchas copilocal now handles for you:
   - **Foundry Local** NPU/OpenVINO variants are compiled with a small fixed context (often
     **4224**), which overflows as `input_ids size … exceeds max length`. Run the model on
     Ollama or LM Studio (GPU/CPU, large context) instead — the NPU build can't be widened.
-  - **LM Studio** uses the model's loaded/max context; load it with a larger context length.
+  - **LM Studio** loads each model at the context chosen in its **load dialog**, and the
+    default *custom* length (often **8192**) is too small for Copilot. When you load the model,
+    set **Context Length** to the **model maximum** (turn off the custom limit / slide it to max)
+    so the loaded window fits Copilot's prompt. Otherwise you'll see
+    `n_keep (…) >= n_ctx (8192) … load the model with a larger context length`.
 
 ## Recommended models
 

@@ -73,9 +73,10 @@ internal static class Preflight
 
     static string LmStudioBody(int ctx) =>
         $"[yellow]This model is loaded with a {ctx}-token context[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +
-        "Copilot's prompt is larger and gets truncated (blank/garbled replies).\n\n" +
-        "[dim]In LM Studio, load the model with a larger context length (the load dialog / 'Context\n" +
-        "Length' setting), then re-run copilocal.[/]";
+        "Copilot's prompt is larger and gets truncated (blank/garbled replies, or\n" +
+        "\"n_keep >= n_ctx ... load the model with a larger context length\").\n\n" +
+        "[dim]In LM Studio's load dialog, set the Context Length to the model maximum (not the\n" +
+        "smaller custom default), then re-run copilocal.[/]";
 
     static string GenericBody(int ctx) =>
         $"[yellow]This model's context is {ctx} tokens[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +

@@ -57,8 +57,8 @@ winget install Gjlumsden.Copilocal
 #    - A local runtime + a model, e.g. Ollama:
 ollama pull qwen2.5-coder:7b
 
-# 3. Ollama only — give Copilot's prompt room (default 4096 is too small):
-setx OLLAMA_CONTEXT_LENGTH 32768          # then restart Ollama
+# 3. Ollama only — give Copilot's prompt room (64k–128k if memory allows):
+setx OLLAMA_CONTEXT_LENGTH 131072         # then restart Ollama
 
 # 4. Launch
 copilocal
@@ -81,6 +81,10 @@ but that's **one model per session**, set by hand. copilocal turns it into a pic
   yourself, e.g. with Homebrew)
 - At least one of: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai)
   (copilocal can install these for you on Windows)
+  - **Foundry Local note:** copilocal expects the newer preview CLI surface (0.10+:
+    `foundry cache list -o json`, `foundry server ...`). If `winget install
+    Microsoft.FoundryLocal` gives you an older 0.8.x service-based CLI, use copilocal's
+    installer flow or the `cli-preview-*` GitHub release instead.
 - Windows x64 / ARM64, or macOS arm64 / x64 — a single self-contained binary; no .NET runtime required
 
 ### Validated with
@@ -154,13 +158,16 @@ copilocal --dry-run            # show what it would set, don't launch
 
 copilocal sets these on the **child** `copilot` process only:
 
-```
-COPILOT_PROVIDER_BASE_URL   the chosen provider's OpenAI base URL
-COPILOT_PROVIDER_TYPE       openai
-COPILOT_MODEL               the chosen model id
-COPILOT_PROVIDER_API_KEY    local  (placeholder; local servers ignore it)
-COPILOT_PROVIDER_WIRE_API   responses  (only for reasoning models, see below)
-```
+| Environment variable | Value / when set |
+| --- | --- |
+| `COPILOT_PROVIDER_BASE_URL` | the chosen provider's OpenAI base URL |
+| `COPILOT_PROVIDER_TYPE` | `openai` |
+| `COPILOT_MODEL` | the chosen model id |
+| `COPILOT_PROVIDER_API_KEY` | `local` (placeholder; local servers ignore it) |
+| `COPILOT_PROVIDER_WIRE_API` | `responses` when a reasoning model needs the Responses API |
+| `COPILOT_OFFLINE` | `true` in air-gapped mode |
+| `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | auto-derived from model context, or your launch-options override |
+| `COPILOT_PROVIDER_MAX_OUTPUT_TOKENS` | auto-derived from model context, or your launch-options override |
 
 > Models must support **tool calling** and **streaming** to work well with Copilot CLI.
 > Before launch copilocal runs **preflight guards**: it flags models that don't advertise
@@ -182,12 +189,14 @@ A few gotchas copilocal now handles for you:
 - **Context too small for Copilot's prompt.** Copilot's system prompt + tools run to 20k+
   tokens, so a small window truncates it (blank replies / loops / 400). copilocal reads each
   provider's effective context and warns below **16384** tokens:
-  - **Ollama** loads at `OLLAMA_CONTEXT_LENGTH` (default **4096** when unset). Fix with
-    `setx OLLAMA_CONTEXT_LENGTH 131072` (clamped per model's max), then restart Ollama.
-  - **Foundry Local** bakes the context into each compiled **variant**: the `…-openvino-npu`
-    (NPU) build is a small fixed **4224** tokens (overflows as `input_ids size … exceeds max
-    length`) and can't be widened, but the **GPU/CPU variants of the same model are 32768** —
-    plenty for Copilot. Use a non-NPU variant, e.g.
+  - **Ollama** auto-sizes context from available VRAM when `OLLAMA_CONTEXT_LENGTH` is unset
+    (for example 4k under 24 GiB VRAM, 32k at 24–48 GiB, 256k at 48+ GiB). For Copilot, set
+    an explicit large value such as `64000` or `131072` if memory allows, then restart Ollama.
+  - **Foundry Local** bakes the context into each compiled **variant**. On the validated
+    `qwen2.5-coder` variants with Foundry CLI 0.10.0, the `…-openvino-npu` (NPU) build
+    reported **4224** tokens (overflows as `input_ids size … exceeds max length`) and couldn't
+    be widened, while GPU/CPU variants of the same model reported **32768**. Treat those as
+    observed model/version values, not universal guarantees. Use a non-NPU variant, e.g.
     `foundry model download <model>-generic-gpu` (or `-generic-cpu` / `-openvino-gpu`), or
     `foundry model run <model> --device GPU`.
   - **LM Studio** loads each model at the context chosen in its **load dialog**, and the
@@ -214,10 +223,11 @@ Small, fast, non-reasoning coders are the safest start; reasoning models work to
 > Foundry with `foundry model list`, and LM Studio's in-app **Discover** catalog.
 
 > **NPU note:** Foundry Local's `*-openvino-npu` variants run on a supported Intel/Qualcomm
-> **NPU**, freeing the GPU/CPU — but they're compiled with a small fixed **4224-token** context,
-> too small for Copilot CLI's prompt. For copilocal, prefer the **GPU/CPU variant** of the same
-> model (`-generic-gpu` / `-generic-cpu` / `-openvino-gpu`, **32768** tokens). The NPU builds are
-> better suited to small-context apps.
+> **NPU**, freeing the GPU/CPU — but the validated `qwen2.5-coder` NPU variants on Foundry CLI
+> 0.10.0 reported a **4224-token** context, too small for Copilot CLI's prompt. The validated
+> GPU/CPU variants of the same model reported **32768** tokens. Treat these as observed values,
+> not guarantees; for copilocal, prefer a GPU/CPU variant (`-generic-gpu` / `-generic-cpu` /
+> `-openvino-gpu`) when the NPU variant warns on context.
 
 ### Example: tuning to your machine
 
@@ -280,6 +290,9 @@ providers** opens a checkbox list (space to toggle) with a docs link for each:
 - **Ollama** — winget (`Ollama.Ollama`)
 - **LM Studio** — winget (`ElementLabs.LMStudio`)
 - **Foundry Local** — latest CLI MSIX from [microsoft/Foundry-Local](https://github.com/microsoft/Foundry-Local) releases (matches your CPU architecture)
+
+For Foundry Local, that installer intentionally uses the compatible `cli-preview-*` release
+instead of assuming the `Microsoft.FoundryLocal` winget package has the same CLI surface.
 
 ## Build from source
 

@@ -228,7 +228,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             string f = Path.Join(UserProfile, ".copilot", "mcp-config.json");
             if (!File.Exists(f)) return names;
             using var d = JsonDocument.Parse(File.ReadAllText(f));
-            if (d.RootElement.TryGetProperty("mcpServers", out var s) && s.ValueKind == JsonValueKind.Object)
+            if (d.RootElement.ValueKind == JsonValueKind.Object
+                && d.RootElement.TryGetProperty("mcpServers", out var s) && s.ValueKind == JsonValueKind.Object)
                 foreach (var p in s.EnumerateObject()) names.Add(p.Name);
         }
         catch (IOException)
@@ -252,8 +253,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         if (!HasFoundry) return items;
         var (code, outp, _) = proc.Run(FoundryExe, "cache list -o json", DiscoverTimeoutMs);
         if (code != 0) return items;
-        foreach (var (id, alias, tools) in ParseFoundry(outp))
-            items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", BaseUrl = null, Model = id, LoadAlias = alias, Tools = tools });
+        foreach (var (id, loadId, tools) in ParseFoundry(outp))
+            items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", BaseUrl = null, Model = id, LoadAlias = loadId, Tools = tools });
         return items;
     }
 
@@ -268,7 +269,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         return items;
     }
 
-    internal static IEnumerable<(string Id, string Alias, bool Tools)> ParseFoundry(string json)
+    internal static IEnumerable<(string Id, string LoadId, bool Tools)> ParseFoundry(string json)
     {
         var s = json.IndexOf('{'); var e = json.LastIndexOf('}');
         if (s < 0 || e <= s) yield break;
@@ -277,13 +278,22 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         catch (JsonException) { yield break; }
         using (doc)
         {
-            if (!doc.RootElement.TryGetProperty("models", out var models)) yield break;
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("models", out var models)
+                || models.ValueKind != JsonValueKind.Array) yield break;
             foreach (var m in models.EnumerateArray())
             {
-                string id = m.TryGetProperty("displayName", out var dn) ? dn.GetString() ?? "" : "";
+                if (m.ValueKind != JsonValueKind.Object) continue;
+                string display = m.TryGetProperty("displayName", out var dn) ? dn.GetString() ?? "" : "";
+                if (display.Length == 0) continue;   // need a name to show in the menu
+                string variantId = m.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
                 string alias = m.TryGetProperty("alias", out var al) ? al.GetString() ?? "" : "";
                 bool tools = m.TryGetProperty("supportsToolCalling", out var tc) && tc.ValueKind == JsonValueKind.True;
-                if (id.Length > 0) yield return (id, alias.Length > 0 ? alias : id, tools);
+                // Load/info/unload use the concrete variant id (with its ":version") so the exact
+                // cached variant is targeted; the bare alias lets Foundry auto-pick a device
+                // (e.g. the small-context NPU build) regardless of which variant the user chose.
+                string loadId = variantId.Length > 0 ? variantId : (alias.Length > 0 ? alias : display);
+                yield return (display, loadId, tools);
             }
         }
     }
@@ -297,8 +307,10 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         catch (JsonException) { yield break; }
         using (doc)
         {
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) yield break;
             foreach (var m in doc.RootElement.EnumerateArray())
             {
+                if (m.ValueKind != JsonValueKind.Object) continue;
                 string type = m.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
                 if (type == "embedding") continue;
                 string id = m.TryGetProperty("modelKey", out var k) ? k.GetString() ?? "" : "";
@@ -326,7 +338,10 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                         try
                         {
                             using var d = JsonDocument.Parse(outp[s..(e + 1)]);
-                            if (d.RootElement.TryGetProperty("webUrls", out var w) && w.GetArrayLength() > 0)
+                            if (d.RootElement.ValueKind == JsonValueKind.Object
+                                && d.RootElement.TryGetProperty("webUrls", out var w)
+                                && w.ValueKind == JsonValueKind.Array && w.GetArrayLength() > 0
+                                && w[0].ValueKind == JsonValueKind.String)
                                 url = w[0].GetString() ?? url;
                         }
                         catch (JsonException)
@@ -476,7 +491,11 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             || !root.TryGetProperty("choices", out var choices)
             || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0) return false;
         var first = choices[0];
-        return first.ValueKind == JsonValueKind.Object && first.TryGetProperty("message", out message);
+        if (first.ValueKind != JsonValueKind.Object
+            || !first.TryGetProperty("message", out var msg)
+            || msg.ValueKind != JsonValueKind.Object) return false;
+        message = msg;
+        return true;
     }
 
     /// <summary>Heuristic: the model dumped a tool call into 'content' instead of emitting

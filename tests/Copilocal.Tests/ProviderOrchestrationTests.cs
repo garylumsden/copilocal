@@ -600,6 +600,8 @@ public sealed class ProviderOrchestrationTests
     [DataRow("{\"choices\":[]}")]
     [DataRow("{\"choices\":[null]}")]
     [DataRow("{\"choices\":[\"text\"]}")]
+    [DataRow("{\"choices\":[{\"message\":\"hi\"}]}")]
+    [DataRow("{\"choices\":[{\"message\":123}]}")]
     public void HasToolCall_ParseableButWrongShape_ReturnsFalse(string body) =>
         ProviderHub.HasToolCall(body).Should().BeFalse();
 

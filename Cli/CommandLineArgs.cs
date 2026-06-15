@@ -23,22 +23,30 @@ internal sealed record CommandLineArgs(
 
     internal static CommandLineArgs Parse(IEnumerable<string> argv)
     {
-        var args = new List<string>(argv);
-        bool dryRun = ExtractFlag(args, "--dry-run");
-        bool offline = ExtractFlag(args, "--offline");
-        string? sessionName = ExtractValue(args, "--name");
-        int pick = ExtractInt(args, "--pick");
+        var all = new List<string>(argv);
 
-        // Anything after "--" (or whatever is left) is forwarded to copilot.
-        if (args.Count > 0 && args[0] == "--") args.RemoveAt(0);
+        // copilocal's own flags are parsed only from the segment BEFORE a "--" separator;
+        // everything after "--" is forwarded to copilot verbatim (never consumed here).
+        int sep = all.IndexOf("--");
+        var own = sep >= 0 ? all.GetRange(0, sep) : all;
+        var forwarded = sep >= 0 ? all.GetRange(sep + 1, all.Count - sep - 1) : new List<string>();
 
-        bool userSession = args.Any(a =>
+        bool dryRun = ExtractFlag(own, "--dry-run");
+        bool offline = ExtractFlag(own, "--offline");
+        string? sessionName = ExtractValue(own, "--name");
+        int pick = ExtractInt(own, "--pick");
+
+        // Unrecognized args before "--" are forwarded too, ahead of the post-"--" args.
+        var copilotArgs = own;
+        copilotArgs.AddRange(forwarded);
+
+        bool userSession = copilotArgs.Any(a =>
             a == "-r" || a == "--continue" ||
             a.StartsWith("--resume", StringComparison.Ordinal) ||
             a.StartsWith("--session-id", StringComparison.Ordinal) ||
             a == "-n" || a.StartsWith("--name", StringComparison.Ordinal));
 
-        return new CommandLineArgs(dryRun, offline, sessionName, pick, args)
+        return new CommandLineArgs(dryRun, offline, sessionName, pick, copilotArgs)
         {
             UserManagedSession = userSession,
         };

@@ -73,4 +73,26 @@ public sealed class CommandLineArgsTests
         cli.Pick.Should().Be(0);
         cli.Interactive.Should().BeTrue();
     }
+
+    [TestMethod]
+    public void Parse_OwnFlagAfterSeparator_IsForwardedNotConsumed()
+    {
+        // Everything after "--" goes to copilot verbatim, even if it matches a copilocal flag.
+        var cli = CommandLineArgs.Parse(new[] { "--", "--dry-run", "--pick", "3" });
+
+        cli.DryRun.Should().BeFalse();
+        cli.Pick.Should().Be(-1);
+        cli.Interactive.Should().BeTrue();
+        cli.CopilotArgs.Should().Equal("--dry-run", "--pick", "3");
+    }
+
+    [TestMethod]
+    public void Parse_OwnFlagsBeforeSeparator_AreConsumed_RestForwarded()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--dry-run", "--", "--offline" });
+
+        cli.DryRun.Should().BeTrue();      // before "--" => copilocal's
+        cli.Offline.Should().BeFalse();    // after "--"  => forwarded, not copilocal's
+        cli.CopilotArgs.Should().Equal("--offline");
+    }
 }

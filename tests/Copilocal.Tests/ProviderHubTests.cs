@@ -88,12 +88,13 @@ public sealed class ProviderHubTests
             prefix {
               "models": [
                 {
-                  "displayName": "Phi-4 Mini",
-                  "alias": "phi4-mini",
+                  "displayName": "Qwen NPU",
+                  "id": "qwen2.5-coder-7b-instruct-openvino-npu:4",
+                  "alias": "qwen2.5-coder-7b",
                   "supportsToolCalling": true
                 },
                 {
-                  "displayName": "No Alias",
+                  "displayName": "No Id Or Alias",
                   "supportsToolCalling": false
                 },
                 {
@@ -109,11 +110,11 @@ public sealed class ProviderHubTests
 
         // Assert
         result.Should().HaveCount(2);
-        result[0].Id.Should().Be("Phi-4 Mini");
-        result[0].Alias.Should().Be("phi4-mini");
+        result[0].Id.Should().Be("Qwen NPU");
+        result[0].LoadId.Should().Be("qwen2.5-coder-7b-instruct-openvino-npu:4");   // variant id preferred
         result[0].Tools.Should().BeTrue();
-        result[1].Id.Should().Be("No Alias");
-        result[1].Alias.Should().Be("No Alias");
+        result[1].Id.Should().Be("No Id Or Alias");
+        result[1].LoadId.Should().Be("No Id Or Alias");                            // falls back to display
         result[1].Tools.Should().BeFalse();
     }
 
@@ -128,6 +129,18 @@ public sealed class ProviderHubTests
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);
+    }
+
+    [TestMethod]
+    public void ParseFoundry_NonArrayModelsOrNonObjectElements_DoesNotThrow()
+    {
+        // "models" not an array -> empty (no throw).
+        ProviderHub.ParseFoundry("""{"models":"oops"}""").ToList().Should().BeEmpty();
+        // root not an object -> empty (no throw).
+        ProviderHub.ParseFoundry("""{"x":1}""").ToList().Should().BeEmpty();
+        // non-object array elements are skipped, valid ones kept.
+        ProviderHub.ParseFoundry("""{"models":[123,"s",{"displayName":"Phi","alias":"phi"}]}""")
+            .ToList().Should().ContainSingle().Which.Id.Should().Be("Phi");
     }
 
     [TestMethod]
@@ -172,5 +185,12 @@ public sealed class ProviderHubTests
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);
+    }
+
+    [TestMethod]
+    public void ParseLmStudio_NonObjectElements_AreSkipped()
+    {
+        ProviderHub.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
+            .ToList().Should().Equal("a");
     }
 }

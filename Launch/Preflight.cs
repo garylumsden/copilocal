@@ -66,10 +66,10 @@ internal static class Preflight
 
     static string FoundryBody(int ctx) =>
         $"[yellow]This model's context is {ctx} tokens[/] — far below Copilot's prompt (often 20k+).\n" +
-        "Foundry's NPU/OpenVINO variants are compiled with a small fixed context, so Copilot's\n" +
+        "Foundry's NPU/OpenVINO variant is compiled with a small fixed context, so Copilot's\n" +
         $"request overflows it: [white]input_ids size … exceeds max length ({ctx})[/].\n\n" +
-        "[dim]Pick a model/variant with a larger window — e.g. run the same model on Ollama or\n" +
-        "LM Studio with a big context, where the GPU/CPU path isn't capped like the NPU build.[/]";
+        "[dim]Use the GPU or CPU variant of this model instead — those are 32768 tokens, e.g.\n" +
+        "foundry model download <model>-generic-gpu (or -generic-cpu / -openvino-gpu).[/]";
 
     static string LmStudioBody(int ctx) =>
         $"[yellow]This model is loaded with a {ctx}-token context[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +

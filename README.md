@@ -183,9 +183,12 @@ A few gotchas copilocal now handles for you:
   provider's effective context and warns below **16384** tokens:
   - **Ollama** loads at `OLLAMA_CONTEXT_LENGTH` (default **4096** when unset). Fix with
     `setx OLLAMA_CONTEXT_LENGTH 131072` (clamped per model's max), then restart Ollama.
-  - **Foundry Local** NPU/OpenVINO variants are compiled with a small fixed context (often
-    **4224**), which overflows as `input_ids size … exceeds max length`. Run the model on
-    Ollama or LM Studio (GPU/CPU, large context) instead — the NPU build can't be widened.
+  - **Foundry Local** bakes the context into each compiled **variant**: the `…-openvino-npu`
+    (NPU) build is a small fixed **4224** tokens (overflows as `input_ids size … exceeds max
+    length`) and can't be widened, but the **GPU/CPU variants of the same model are 32768** —
+    plenty for Copilot. Use a non-NPU variant, e.g.
+    `foundry model download <model>-generic-gpu` (or `-generic-cpu` / `-openvino-gpu`), or
+    `foundry model run <model> --device GPU`.
   - **LM Studio** loads each model at the context chosen in its **load dialog**, and the
     default *custom* length (often **8192**) is too small for Copilot. When you load the model,
     set **Context Length** to the **model maximum** (turn off the custom limit / slide it to max)
@@ -209,9 +212,11 @@ Small, fast, non-reasoning coders are the safest start; reasoning models work to
 > [`ollama.com/library?sort=newest`](https://ollama.com/library?sort=newest),
 > Foundry with `foundry model list`, and LM Studio's in-app **Discover** catalog.
 
-> **NPU note:** Foundry Local auto-selects the best device for the loaded model. Its
-> `*-openvino-npu` variants (e.g. `qwen2.5-coder-7b`, `phi-4-mini`) run on a supported
-> Intel/Qualcomm **NPU**, freeing the GPU/CPU — handy on Copilot+ PCs and Core Ultra laptops.
+> **NPU note:** Foundry Local's `*-openvino-npu` variants run on a supported Intel/Qualcomm
+> **NPU**, freeing the GPU/CPU — but they're compiled with a small fixed **4224-token** context,
+> too small for Copilot CLI's prompt. For copilocal, prefer the **GPU/CPU variant** of the same
+> model (`-generic-gpu` / `-generic-cpu` / `-openvino-gpu`, **32768** tokens). The NPU builds are
+> better suited to small-context apps.
 
 ### Example: tuning to your machine
 

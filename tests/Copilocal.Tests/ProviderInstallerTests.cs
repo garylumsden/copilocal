@@ -164,7 +164,7 @@ public sealed class ProviderInstallerTests
         var proc = new FakeProcessRunner();
         var http = new FakeHttpGateway();
         http.AddGet(ReleasesUrl, FoundryReleaseJson());
-        http.AddDownloadException(FoundryMsixUrl, new InvalidOperationException("download failed"));
+        http.AddDownloadException(FoundryMsixUrl, new HttpRequestException("download failed"));
         var installer = new ProviderInstaller(proc, http);
 
         // Act

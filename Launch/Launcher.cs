@@ -142,10 +142,10 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
 
         string copilot = proc.Which("copilot") ?? "copilot";
         try { LastExitCode = proc.RunInherit(copilot, finalArgs, env); return true; }
-        catch (Exception ex)
+        catch (System.ComponentModel.Win32Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to launch copilot:[/] {Markup.Escape(ex.Message)}");
-            AnsiConsole.MarkupLine("[dim]Install it: https://docs.github.com/copilot/how-tos/copilot-cli[/]");
+            AnsiConsole.MarkupLine("[dim]Install it: https://github.com/github/copilot-cli[/]");
             return false;
         }
     }

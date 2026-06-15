@@ -121,43 +121,31 @@ public sealed class ProviderOrchestrationTests
     }
 
     [TestMethod]
-    public void SupportsResponses_NotFoundOrMethodNotAllowed_ReturnsFalse()
+    [DataRow(404)]
+    [DataRow(405)]
+    public void SupportsResponses_NotFoundOrMethodNotAllowed_ReturnsFalse(int status)
     {
         // Arrange
-        var statuses = new[] { 404, 405 };
+        var http = new FakeHttpGateway();
+        http.AddPost(ResponsesUrl, ok: false, status: status, body: "");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
-        foreach (int status in statuses)
-        {
-            var http = new FakeHttpGateway();
-            http.AddPost(ResponsesUrl, ok: false, status: status, body: "");
-            var providers = new ProviderHub(new FakeProcessRunner(), http);
-
-            // Act
-            var result = providers.SupportsResponses(BaseUrl);
-
-            // Assert
-            result.Should().BeFalse();
-        }
+        // Act / Assert
+        providers.SupportsResponses(BaseUrl).Should().BeFalse();
     }
 
     [TestMethod]
-    public void SupportsResponses_OtherStatuses_ReturnsTrue()
+    [DataRow(true, 200)]
+    [DataRow(false, 400)]
+    public void SupportsResponses_OtherStatuses_ReturnsTrue(bool ok, int status)
     {
         // Arrange
-        var cases = new[] { (Ok: true, Status: 200), (Ok: false, Status: 400) };
+        var http = new FakeHttpGateway();
+        http.AddPost(ResponsesUrl, ok, status, "");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
-        foreach (var testCase in cases)
-        {
-            var http = new FakeHttpGateway();
-            http.AddPost(ResponsesUrl, testCase.Ok, testCase.Status, "");
-            var providers = new ProviderHub(new FakeProcessRunner(), http);
-
-            // Act
-            var result = providers.SupportsResponses(BaseUrl);
-
-            // Assert
-            result.Should().BeTrue();
-        }
+        // Act / Assert
+        providers.SupportsResponses(BaseUrl).Should().BeTrue();
     }
 
     [TestMethod]
@@ -165,7 +153,7 @@ public sealed class ProviderOrchestrationTests
     {
         // Arrange
         var http = new FakeHttpGateway();
-        http.AddPostException(ResponsesUrl, new InvalidOperationException("connection refused"));
+        http.AddPostException(ResponsesUrl, new HttpRequestException("connection refused"));
         var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
@@ -603,6 +591,41 @@ public sealed class ProviderOrchestrationTests
 
         // Act / Assert
         providers.HasCopilot.Should().BeFalse();
+    }
+
+    [TestMethod]
+    [DataRow("[]")]
+    [DataRow("\"oops\"")]
+    [DataRow("123")]
+    [DataRow("{\"choices\":[]}")]
+    [DataRow("{\"choices\":[null]}")]
+    [DataRow("{\"choices\":[\"text\"]}")]
+    public void HasToolCall_ParseableButWrongShape_ReturnsFalse(string body) =>
+        ProviderHub.HasToolCall(body).Should().BeFalse();
+
+    [TestMethod]
+    public void ModelContextLength_FoundryModelNotObject_ReturnsZero()
+    {
+        // Arrange: model-info returns valid JSON but "model" is a string, not an object.
+        var proc = new FakeProcessRunner();
+        proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
+        proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", stdout: """{"model":"phi"}""");
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
+
+        // Act / Assert
+        providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini")).Should().Be(0);
+    }
+
+    [TestMethod]
+    public void ModelContextLength_LmStudioRootNotObject_ReturnsZero()
+    {
+        // Arrange: a different service on port 1234 answers with a JSON array.
+        var http = new FakeHttpGateway();
+        http.AddGet("http://localhost:1234/api/v1/models", "[]");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        // Act / Assert
+        providers.ModelContextLength(LmStudioItem("target")).Should().Be(0);
     }
 
     private static MenuItem LmStudioItem(string model) => new()

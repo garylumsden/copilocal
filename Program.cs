@@ -16,7 +16,7 @@ internal static class Program
     internal static int Main(string[] argv)
     {
         try { Console.OutputEncoding = Encoding.UTF8; }
-        catch (Exception)
+        catch (IOException)
         {
             // best-effort: older/redirected consoles may reject UTF-8 output.
         }

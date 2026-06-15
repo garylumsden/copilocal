@@ -31,8 +31,8 @@ internal static class LaunchOptionsPage
         var selected = AnsiConsole.Prompt(ms);
 
         cfg.Flags = new HashSet<string>();
-        foreach (var (label, token) in catalog)
-            if (selected.Contains(label)) cfg.Flags.Add(token);
+        foreach (var (label, token) in catalog.Where(c => selected.Contains(c.Label)))
+            cfg.Flags.Add(token);
 
         // Reasoning effort (single choice; "(unset)" leaves the flag off).
         const string unset = "(unset)";

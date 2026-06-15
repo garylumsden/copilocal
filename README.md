@@ -1,6 +1,6 @@
 # copilocal
 
-Pick a **local LLM** from a fast terminal UI and launch **GitHub Copilot CLI** against it.
+Pick a **local LLM** from an arrow-key terminal menu and launch **GitHub Copilot CLI** against it.
 
 `copilocal` discovers the models you already have in **Ollama**, **Foundry Local**, and
 **LM Studio**, lets you choose one in an arrow-key menu, makes sure that provider's

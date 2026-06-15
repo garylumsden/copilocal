@@ -50,8 +50,8 @@ internal sealed class LaunchConfig
     /// <summary>Any other raw copilot args, space-separated.</summary>
     internal string ExtraArgs { get; set; } = "";
 
-    static string Dir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
-    internal static string FilePath => Path.Combine(Dir, "config.json");
+    static string Dir => Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
+    internal static string FilePath => Path.Join(Dir, "config.json");
 
     /// <summary>Load preferences from <paramref name="path"/> (defaults to <see cref="FilePath"/>).
     /// The <paramref name="path"/> override keeps this unit-testable without touching the real
@@ -66,16 +66,28 @@ internal sealed class LaunchConfig
             using var d = JsonDocument.Parse(File.ReadAllText(path));
             var r = d.RootElement;
             if (r.TryGetProperty("flags", out var fa) && fa.ValueKind == JsonValueKind.Array)
-                foreach (var el in fa.EnumerateArray())
-                    if (el.ValueKind == JsonValueKind.String) c.Flags.Add(el.GetString()!);
+                foreach (var el in fa.EnumerateArray().Where(el => el.ValueKind == JsonValueKind.String))
+                    c.Flags.Add(el.GetString()!);
             c.ReasoningEffort = GetStr(r, "reasoningEffort");
             c.MaxPromptTokens = GetInt(r, "maxPromptTokens");
             c.MaxOutputTokens = GetInt(r, "maxOutputTokens");
             c.ExtraArgs = GetStr(r, "extraArgs");
         }
-        catch (Exception)
+        catch (IOException)
         {
             // best-effort: invalid or unreadable config should fall back to defaults.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // best-effort: invalid or unreadable config should fall back to defaults.
+        }
+        catch (JsonException)
+        {
+            // best-effort: invalid or unreadable config should fall back to defaults.
+        }
+        catch (InvalidOperationException)
+        {
+            // best-effort: a valid-JSON but non-object config root falls back to defaults.
         }
         return c;
     }
@@ -103,7 +115,11 @@ internal sealed class LaunchConfig
             w.WriteString("extraArgs", ExtraArgs);
             w.WriteEndObject();
         }
-        catch (Exception)
+        catch (IOException)
+        {
+            // best-effort: failing to persist preferences should not block launch.
+        }
+        catch (UnauthorizedAccessException)
         {
             // best-effort: failing to persist preferences should not block launch.
         }

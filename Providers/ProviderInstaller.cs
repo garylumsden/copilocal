@@ -33,7 +33,7 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
     {
         string? url = ResolveFoundryMsixUrl();
         if (url is null) return false;
-        string tmp = Path.Combine(Path.GetTempPath(), Path.GetFileName(url));
+        string tmp = Path.Join(Path.GetTempPath(), Path.GetFileName(url));
         try
         {
             http.DownloadToFile(url, tmp, 600_000);
@@ -41,7 +41,22 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
                 $"-NoProfile -Command \"Add-AppxPackage -Path '{tmp}'\"", 300_000);
             return code == 0;
         }
-        catch (Exception)
+        catch (HttpRequestException)
+        {
+            // best-effort: install flow reports failure and leaves docs fallback to user.
+            return false;
+        }
+        catch (IOException)
+        {
+            // best-effort: install flow reports failure and leaves docs fallback to user.
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // best-effort: install flow reports failure and leaves docs fallback to user.
+            return false;
+        }
+        catch (UnauthorizedAccessException)
         {
             // best-effort: install flow reports failure and leaves docs fallback to user.
             return false;
@@ -49,7 +64,11 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         finally
         {
             try { File.Delete(tmp); }
-            catch (Exception)
+            catch (IOException)
+            {
+                // best-effort: downloaded installer cache can remain if locked.
+            }
+            catch (UnauthorizedAccessException)
             {
                 // best-effort: downloaded installer cache can remain if locked.
             }
@@ -73,7 +92,8 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
             JsonElement best = default; Version bestVer = new(0, 0); bool found = false;
             foreach (var rel in doc.RootElement.EnumerateArray())
             {
-                string tag = rel.GetProperty("tag_name").GetString() ?? "";
+                if (!rel.TryGetProperty("tag_name", out var tn)) continue;
+                string tag = tn.GetString() ?? "";
                 if (!tag.StartsWith("cli-preview-")) continue;
                 if (!rel.TryGetProperty("assets", out var assets) || assets.GetArrayLength() == 0) continue;
                 if (!Version.TryParse(tag.Replace("cli-preview-", ""), out var v)) continue;
@@ -84,16 +104,31 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
             string? fallback = null;
             foreach (var a in best.GetProperty("assets").EnumerateArray())
             {
-                string name = a.GetProperty("name").GetString() ?? "";
-                string dl = a.GetProperty("browser_download_url").GetString() ?? "";
+                string name = a.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
+                string dl = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
                 if (name.Contains($"win-{arch}-winml") && name.EndsWith(".msix")) return dl;
                 if (name.Contains($"win-{arch}") && name.EndsWith(".msix")) fallback = dl;
             }
             return fallback;
         }
-        catch (Exception)
+        catch (HttpRequestException)
         {
             // best-effort: missing release metadata means install flow reports failure.
+            return null;
+        }
+        catch (JsonException)
+        {
+            // best-effort: missing release metadata means install flow reports failure.
+            return null;
+        }
+        catch (OperationCanceledException)
+        {
+            // best-effort: missing release metadata means install flow reports failure.
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            // best-effort: an unexpected JSON shape from the releases API means no URL.
             return null;
         }
     }

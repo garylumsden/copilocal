@@ -104,7 +104,7 @@ public sealed class LaunchConfigTests
     public void SaveThenLoad_RoundTripsAllFields()
     {
         // Arrange: persist to a temp path so the real ~/.copilocal/config.json is untouched.
-        string path = Path.Combine(Path.GetTempPath(), $"copilocal-cfg-{Guid.NewGuid():N}.json");
+        string path = Path.Join(Path.GetTempPath(), $"copilocal-cfg-{Guid.NewGuid():N}.json");
         var config = new LaunchConfig
         {
             Flags = ["--yolo", "--banner"],
@@ -135,10 +135,33 @@ public sealed class LaunchConfigTests
     }
 
     [TestMethod]
+    public void Load_NonObjectRoot_ReturnsDefaults()
+    {
+        // Arrange: a hand-edited config that parses but isn't a JSON object.
+        string path = Path.Join(Path.GetTempPath(), $"copilocal-arr-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, "[]");
+
+        try
+        {
+            // Act
+            var loaded = LaunchConfig.Load(path);
+
+            // Assert
+            loaded.Flags.Should().BeEmpty();
+            loaded.ExtraArgs.Should().BeEmpty();
+            loaded.MaxPromptTokens.Should().Be(0);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
     public void Load_MissingFile_ReturnsDefaults()
     {
         // Arrange
-        string path = Path.Combine(Path.GetTempPath(), $"copilocal-missing-{Guid.NewGuid():N}.json");
+        string path = Path.Join(Path.GetTempPath(), $"copilocal-missing-{Guid.NewGuid():N}.json");
 
         // Act
         var loaded = LaunchConfig.Load(path);

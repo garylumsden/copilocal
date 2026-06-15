@@ -14,7 +14,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     {
         get
         {
-            if (!_ollamaSet) { _ollama = proc.Which("ollama") ?? Path.Combine(LocalAppData, "Programs", "Ollama", "ollama.exe"); _ollamaSet = true; }
+            if (!_ollamaSet) { _ollama = proc.Which("ollama") ?? Path.Join(LocalAppData, "Programs", "Ollama", "ollama.exe"); _ollamaSet = true; }
             return _ollama!;
         }
     }
@@ -23,7 +23,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     {
         get
         {
-            if (!_foundrySet) { _foundry = proc.Which("foundry") ?? Path.Combine(LocalAppData, "Microsoft", "WindowsApps", "foundry.exe"); _foundrySet = true; }
+            if (!_foundrySet) { _foundry = proc.Which("foundry") ?? Path.Join(LocalAppData, "Microsoft", "WindowsApps", "foundry.exe"); _foundrySet = true; }
             return _foundry!;
         }
     }
@@ -32,12 +32,12 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     {
         get
         {
-            if (!_lmsSet) { _lms = proc.Which("lms") ?? Path.Combine(UserProfile, ".lmstudio", "bin", "lms.exe"); _lmsSet = true; }
+            if (!_lmsSet) { _lms = proc.Which("lms") ?? Path.Join(UserProfile, ".lmstudio", "bin", "lms.exe"); _lmsSet = true; }
             return _lms!;
         }
     }
 
-    internal static string LmStudioApp => Path.Combine(LocalAppData, "Programs", "LM Studio", "LM Studio.exe");
+    internal static string LmStudioApp => Path.Join(LocalAppData, "Programs", "LM Studio", "LM Studio.exe");
 
     static string LocalAppData => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     static string UserProfile => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -126,25 +126,18 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// REST API (loaded context if loaded, else the model's max); Foundry from `model info`.</summary>
     internal int ModelContextLength(MenuItem m)
     {
-        try
+        // Each branch is self-protecting (env parse / inner try-catch), so no wrapper needed.
+        switch (m.Provider)
         {
-            switch (m.Provider)
-            {
-                case "Ollama":
-                    int c = OllamaContextLength();
-                    return c > 0 ? c : 4096;
-                case "LM Studio":
-                    return LmStudioContextLength(m.Model, m.BaseUrl);
-                case "Foundry":
-                    return FoundryContextLength(m);
-                default:
-                    return 0;   // unknown
-            }
-        }
-        catch (Exception)
-        {
-            // best-effort: unknown context should leave Copilot defaults intact.
-            return 0;
+            case "Ollama":
+                int c = OllamaContextLength();
+                return c > 0 ? c : 4096;
+            case "LM Studio":
+                return LmStudioContextLength(m.Model, m.BaseUrl);
+            case "Foundry":
+                return FoundryContextLength(m);
+            default:
+                return 0;   // unknown
         }
     }
 
@@ -161,9 +154,12 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             int s = outp.IndexOf('{'); int e = outp.LastIndexOf('}');
             if (s < 0 || e <= s) return 0;
             using var d = JsonDocument.Parse(outp[s..(e + 1)]);
-            return d.RootElement.TryGetProperty("model", out var model) ? NumOrZero(model, "contextLength") : 0;
+            return d.RootElement.ValueKind == JsonValueKind.Object
+                && d.RootElement.TryGetProperty("model", out var model)
+                && model.ValueKind == JsonValueKind.Object
+                ? NumOrZero(model, "contextLength") : 0;
         }
-        catch (Exception)
+        catch (JsonException)
         {
             // best-effort: missing/changed model-info output leaves the context unknown.
             return 0;
@@ -184,9 +180,9 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             string body = http.GetString($"{host}/api/v1/models", 8_000);
             using var d = JsonDocument.Parse(body);
             if (!d.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array) return 0;
-            foreach (var el in models.EnumerateArray())
+            foreach (var el in models.EnumerateArray()
+                .Where(el => el.TryGetProperty("key", out var key) && key.GetString() == modelId))
             {
-                if (!el.TryGetProperty("key", out var key) || key.GetString() != modelId) continue;
                 if (el.TryGetProperty("loaded_instances", out var insts) && insts.ValueKind == JsonValueKind.Array)
                     foreach (var inst in insts.EnumerateArray())
                         if (inst.TryGetProperty("config", out var cfg) && cfg.ValueKind == JsonValueKind.Object)
@@ -198,9 +194,24 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             }
             return 0;
         }
-        catch (Exception)
+        catch (HttpRequestException)
         {
             // best-effort: LM Studio may be stopped or return non-JSON while warming.
+            return 0;
+        }
+        catch (JsonException)
+        {
+            // best-effort: LM Studio may be stopped or return non-JSON while warming.
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // best-effort: LM Studio may be stopped or return non-JSON while warming.
+            return 0;
+        }
+        catch (InvalidOperationException)
+        {
+            // best-effort: an unexpected JSON shape (e.g. a different service on the port) is unknown.
             return 0;
         }
     }
@@ -214,13 +225,21 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         var names = new List<string>();
         try
         {
-            string f = Path.Combine(UserProfile, ".copilot", "mcp-config.json");
+            string f = Path.Join(UserProfile, ".copilot", "mcp-config.json");
             if (!File.Exists(f)) return names;
             using var d = JsonDocument.Parse(File.ReadAllText(f));
             if (d.RootElement.TryGetProperty("mcpServers", out var s) && s.ValueKind == JsonValueKind.Object)
                 foreach (var p in s.EnumerateObject()) names.Add(p.Name);
         }
-        catch (Exception)
+        catch (IOException)
+        {
+            // best-effort: malformed/unreadable MCP config simply means no disables.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // best-effort: malformed/unreadable MCP config simply means no disables.
+        }
+        catch (JsonException)
         {
             // best-effort: malformed/unreadable MCP config simply means no disables.
         }
@@ -333,18 +352,12 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// <summary>Unload a model from memory to free VRAM (best-effort; ignores errors).</summary>
     internal void Unload(MenuItem m)
     {
-        try
+        // proc.Run captures its own failures (never throws), so unload is inherently best-effort.
+        switch (m.Provider)
         {
-            switch (m.Provider)
-            {
-                case "Foundry": proc.Run(FoundryExe, $"model unload {m.LoadAlias ?? m.Model}", 60000); break;
-                case "LM Studio": proc.Run(LmsExe, $"unload {m.Model}", 30000); break;
-                default: proc.Run(OllamaExe, $"stop {m.Model}", 30000); break;   // Ollama
-            }
-        }
-        catch (Exception)
-        {
-            // best-effort: unload only frees VRAM and must not block relaunch.
+            case "Foundry": proc.Run(FoundryExe, $"model unload {m.LoadAlias ?? m.Model}", 60000); break;
+            case "LM Studio": proc.Run(LmsExe, $"unload {m.Model}", 30000); break;
+            default: proc.Run(OllamaExe, $"stop {m.Model}", 30000); break;   // Ollama
         }
     }
 
@@ -392,7 +405,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 return (WarmStatus.Suspect, $"output looks garbled: \"{Trim(text)}\"", reasoning);
             return (WarmStatus.Ok, Trim(text), reasoning);
         }
-        catch (Exception ex) { return (WarmStatus.Failed, (ex.InnerException ?? ex).Message, false); }
+        catch (HttpRequestException ex) { return (WarmStatus.Failed, (ex.InnerException ?? ex).Message, false); }
+        catch (OperationCanceledException ex) { return (WarmStatus.Failed, (ex.InnerException ?? ex).Message, false); }
     }
 
     internal enum ToolStatus { Ok, NotNative, Inconclusive }
@@ -431,7 +445,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                     reasoning);
             return (ToolStatus.Inconclusive, "model did not call the tool", reasoning);
         }
-        catch (Exception ex) { return (ToolStatus.Inconclusive, (ex.InnerException ?? ex).Message, false); }
+        catch (HttpRequestException ex) { return (ToolStatus.Inconclusive, (ex.InnerException ?? ex).Message, false); }
+        catch (OperationCanceledException ex) { return (ToolStatus.Inconclusive, (ex.InnerException ?? ex).Message, false); }
     }
 
     /// <summary>True if the chat/completions response carries a non-empty tool_calls array.</summary>
@@ -440,15 +455,28 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         try
         {
             using var d = JsonDocument.Parse(body);
-            var msg = d.RootElement.GetProperty("choices")[0].GetProperty("message");
+            if (!TryFirstMessage(d, out var msg)) return false;
             return msg.TryGetProperty("tool_calls", out var tc)
                 && tc.ValueKind == JsonValueKind.Array && tc.GetArrayLength() > 0;
         }
-        catch (Exception)
+        catch (JsonException)
         {
             // best-effort: a malformed body just means "no native tool call seen".
             return false;
         }
+    }
+
+    /// <summary>Resolve <c>choices[0].message</c> from a chat/completions body, guarding the shape
+    /// so navigation can't throw (only a JSON parse error can).</summary>
+    static bool TryFirstMessage(JsonDocument d, out JsonElement message)
+    {
+        message = default;
+        var root = d.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0) return false;
+        var first = choices[0];
+        return first.ValueKind == JsonValueKind.Object && first.TryGetProperty("message", out message);
     }
 
     /// <summary>Heuristic: the model dumped a tool call into 'content' instead of emitting
@@ -475,7 +503,12 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             var (_, status, _) = http.PostJson($"{baseUrl}/responses", "{}", 10_000);
             return status is not (404 or 405);
         }
-        catch (Exception)
+        catch (HttpRequestException)
+        {
+            // best-effort: failed probe means keep chat/completions.
+            return false;
+        }
+        catch (OperationCanceledException)
         {
             // best-effort: failed probe means keep chat/completions.
             return false;
@@ -487,10 +520,10 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         try
         {
             using var d = JsonDocument.Parse(body);
-            var msg = d.RootElement.GetProperty("choices")[0].GetProperty("message");
+            if (!TryFirstMessage(d, out var msg)) return "";
             return msg.TryGetProperty(field, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
         }
-        catch (Exception)
+        catch (JsonException)
         {
             // best-effort: malformed warm-up response becomes empty field.
             return "";

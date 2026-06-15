@@ -30,9 +30,13 @@ internal sealed class ProcessRunner : IProcessRunner
             if (!exited)
             {
                 try { p.Kill(true); }
-                catch (Exception)
+                catch (InvalidOperationException)
                 {
                     // best-effort: timed-out process may already have exited.
+                }
+                catch (System.ComponentModel.Win32Exception)
+                {
+                    // best-effort: the OS may refuse to kill an already-exiting process.
                 }
             }
             // Bound the drain: a child the CLI spawned (e.g. a provider daemon) can
@@ -40,22 +44,23 @@ internal sealed class ProcessRunner : IProcessRunner
             // otherwise block forever even though the CLI itself has exited. Wait only
             // briefly, then take whatever completed.
             try { Task.WaitAll(new[] { outTask, errTask }, StreamDrainTimeoutMs); }
-            catch (Exception)
+            catch (AggregateException)
             {
-                // best-effort: return whatever output drained before timeout/fault.
+                // best-effort: return whatever output drained before a task faulted.
             }
             string o = outTask.Status == TaskStatus.RanToCompletion ? outTask.Result : "";
             string e = errTask.Status == TaskStatus.RanToCompletion ? errTask.Result : "";
             int code = exited ? SafeExitCode(p) : -2;
             return (code, o, e);
         }
-        catch (Exception ex) { return (-1, "", ex.Message); }
+        catch (System.ComponentModel.Win32Exception ex) { return (-1, "", ex.Message); }
+        catch (InvalidOperationException ex) { return (-1, "", ex.Message); }
     }
 
     static int SafeExitCode(Process p)
     {
         try { return p.ExitCode; }
-        catch (Exception)
+        catch (InvalidOperationException)
         {
             // best-effort: process exit code can be unavailable after races.
             return -1;

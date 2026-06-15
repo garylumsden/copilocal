@@ -99,5 +99,8 @@ jobs:
       - uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: Gjlumsden.Copilocal
+          # This workflow runs on the tag push (not a `release` event), so tell the action
+          # which published release to read assets from.
+          release-tag: ${{ github.ref_name }}
           installers-regex: 'copilocal-win-(x64|arm64)\.exe$'
           token: ${{ secrets.WINGET_TOKEN }}

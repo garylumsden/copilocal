@@ -35,6 +35,22 @@ public sealed class ProviderOrchestrationTests
     }
 
     [TestMethod]
+    public void WarmUp_WithBearerToken_UsesAuthorizationHeader()
+    {
+        // Arrange
+        var http = new FakeHttpGateway();
+        http.AddPost(ChatUrl, ok: true, status: 200, body: Completion(content: "Ready."));
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        // Act
+        providers.WarmUp(BaseUrl, "model", "sk-test-token");
+
+        // Assert
+        http.PostCalls.Should().ContainSingle();
+        http.PostCalls[0].BearerToken.Should().Be("sk-test-token");
+    }
+
+    [TestMethod]
     public void WarmUp_EmptyContentWithReasoning_ReturnsFailedWithReasoningFlag()
     {
         // Arrange
@@ -100,7 +116,7 @@ public sealed class ProviderOrchestrationTests
         // Assert
         result.Status.Should().Be(ProviderHub.WarmStatus.Failed);
         result.Reasoning.Should().BeFalse();
-        result.Detail.Should().Be("HTTP 503");
+        result.Detail.Should().StartWith("HTTP 503");
     }
 
     [TestMethod]
@@ -404,6 +420,23 @@ public sealed class ProviderOrchestrationTests
         var call = http.PostCalls.Should().ContainSingle().Subject;
         call.Json.Should().Contain("\"tools\"");
         call.Json.Should().Contain("\"tool_choice\":\"auto\"");
+    }
+
+    [TestMethod]
+    public void ProbeToolCalling_WithBearerToken_UsesAuthorizationHeader()
+    {
+        // Arrange
+        var http = new FakeHttpGateway();
+        http.AddPost(ChatUrl, ok: true, status: 200,
+            body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
+        // Act
+        providers.ProbeToolCalling(BaseUrl, "model", "sk-test-token");
+
+        // Assert
+        http.PostCalls.Should().ContainSingle();
+        http.PostCalls[0].BearerToken.Should().Be("sk-test-token");
     }
 
     [TestMethod]

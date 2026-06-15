@@ -38,19 +38,42 @@ internal static class Program
 
         bool resuming = false;
         MenuItem? lastLaunched = null;   // to unload when switching models on continue
+        bool liteLlmAutoStartAttempted = false;
 
         while (true)
         {
-            AnsiConsole.MarkupLine("[grey58]Discovering local models…[/]");
-            var models = providers.GatherModels((name, count) =>
+            var launchCfg = LaunchConfig.Load();
+            bool liteEnabled = launchCfg.LiteLlmEnabled;
+            bool includeLocalProviders = !(liteEnabled && launchCfg.HideLocalProvidersWhenLiteLlm);
+
+            AnsiConsole.MarkupLine(includeLocalProviders
+                ? "[grey58]Discovering local models…[/]"
+                : "[grey58]Discovering models…[/]");
+            var models = providers.GatherModels(includeLocalProviders, liteEnabled, (name, count) =>
                 AnsiConsole.MarkupLine(count < 0
                     ? $"  [yellow]…[/] {Markup.Escape(name)} [grey58]— still warming up, skipped (try again)[/]"
                     : count > 0
                         ? $"  [green]✓[/] {Markup.Escape(name)} [grey58]— {count} model{(count == 1 ? "" : "s")}[/]"
                         : $"  [grey46]·[/] {Markup.Escape(name)} [grey58]— no models[/]"));
             AnsiConsole.WriteLine();
-            var missing = MissingProviders(providers);
-            var emptyInstalled = EmptyInstalledProviders(models, providers);
+
+            if (cli.Interactive
+                && ShouldAutoStartLiteLlm(launchCfg, models, installer)
+                && !liteLlmAutoStartAttempted)
+            {
+                liteLlmAutoStartAttempted = true;
+                var start = AnsiConsole.Status().Start("LiteLLM enabled but unreachable; starting runtime...", _ =>
+                    installer.StartLiteLlmWithDetail(launchCfg));
+                if (start.Ok)
+                {
+                    AnsiConsole.MarkupLine("[green]✓[/] LiteLLM auto-started.");
+                    continue;   // re-discover models immediately
+                }
+                AnsiConsole.MarkupLine($"[yellow]·[/] LiteLLM auto-start failed: [dim]{Markup.Escape(start.Detail)}[/]");
+            }
+
+            var missing = MissingProviders(providers, launchCfg, includeLocalProviders);
+            var emptyInstalled = EmptyInstalledProviders(models, providers, launchCfg, includeLocalProviders);
 
             // ----- non-interactive pick (single shot) -----
             if (cli.Pick >= 1 && cli.Pick <= models.Count)
@@ -66,13 +89,16 @@ internal static class Program
                 ? $"⚙  Install provider: {string.Join(", ", missing.Select(p => p.Name))}"
                 : "⚙  Install / manage providers";
             const string configRow = "⚙  Configure launch options";
+            const string manageLiteLlmRow = "⚙  Manage LiteLLM runtime";
             string quitRow = resuming ? "✖  Exit" : "✖  Quit";
 
             var prompt = new SelectionPrompt<MenuItem>()
                 .Title(resuming
                     ? $"Continue session [teal]{Short(sessionId)}[/] with which [teal]model[/]?  [dim](↑/↓, Enter)[/]:"
-                    : "Select a [teal]local model[/]  [dim](↑/↓, Enter to launch)[/]:")
-                .PageSize(Math.Clamp(models.Count + emptyInstalled.Count + 5, 5, 20))
+                    : includeLocalProviders
+                        ? "Select a [teal]local model[/]  [dim](↑/↓, Enter to launch)[/]:"
+                        : "Select a [teal]model[/]  [dim](↑/↓, Enter to launch)[/]:")
+                .PageSize(Math.Clamp(models.Count + emptyInstalled.Count + (liteEnabled ? 6 : 5), 5, 20))
                 .UseConverter(m => m.Display)
                 .EnableSearch();
 
@@ -86,6 +112,8 @@ internal static class Program
             foreach (var info in emptyInstalled)
                 control.Add(new MenuItem { Kind = MenuItemKind.ModelHelp, Provider = info.Key, Model = $"📥  {info.Name}: no models — how to add one" });
             control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Configure, Model = configRow, Provider = "" });
+            if (liteEnabled)
+                control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.ManageLiteLlm, Model = manageLiteLlmRow, Provider = "" });
             if (missing.Count > 0)
                 control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Install, Model = installRow, Provider = "" });
             control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Quit, Model = quitRow, Provider = "" });
@@ -107,8 +135,11 @@ internal static class Program
                     case ControlAction.Configure:
                         LaunchOptionsPage.Show(providers);
                         break;
+                    case ControlAction.ManageLiteLlm:
+                        InstallFlow.ManageLiteLlm(installer, providers);
+                        break;
                     case ControlAction.Install:
-                        InstallFlow.Run(missing, installer);
+                        InstallFlow.Run(missing, installer, providers);
                         break;
                 }
                 continue;
@@ -128,8 +159,15 @@ internal static class Program
 
             bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
 
-            // dry-run, declined warm-up, or a user-managed session => we're done.
-            if (cli.DryRun || !launched || sessionId is null) return 0;
+            // Dry-run ends immediately. If launch was declined/failed in interactive mode,
+            // return to the picker so the user can choose another model.
+            if (cli.DryRun) return 0;
+            if (!launched)
+            {
+                if (cli.Interactive) continue;
+                return 0;
+            }
+            if (sessionId is null) return 0;
 
             // Copilot exited: surface the captured resume id/name, then loop back to
             // the model picker so the user can continue with a different model (or Exit).
@@ -196,6 +234,7 @@ internal static class Program
             "Ollama" => "[dim]Browse the library, then pull any model:[/]",
             "Foundry" => "[dim]List available models with[/] [white]foundry model list[/][dim], then download one:[/]",
             "LM Studio" => "[dim]Use the GUI 'Discover' tab, or the CLI:[/]",
+            "LiteLLM" => "[dim]Use setup wizard or docker compose profile:[/]",
             _ => "[dim]Add a model with:[/]",
         };
         AnsiConsole.WriteLine();
@@ -213,23 +252,50 @@ internal static class Program
 
     // ---------------- helpers ----------------
 
-    static List<ProviderInfo> MissingProviders(ProviderHub providers)
+    static List<ProviderInfo> MissingProviders(ProviderHub providers, LaunchConfig cfg, bool includeLocalProviders)
     {
         var list = new List<ProviderInfo>();
-        if (!providers.HasOllama) list.Add(ProviderInfo.Ollama);
-        if (!providers.HasLmStudio) list.Add(ProviderInfo.LmStudio);
-        if (!providers.HasFoundry) list.Add(ProviderInfo.Foundry);
+        if (includeLocalProviders)
+        {
+            if (!providers.HasOllama) list.Add(ProviderInfo.Ollama);
+            if (!providers.HasLmStudio) list.Add(ProviderInfo.LmStudio);
+            if (!providers.HasFoundry) list.Add(ProviderInfo.Foundry);
+        }
+        if (!cfg.LiteLlmEnabled) list.Add(ProviderInfo.LiteLlm);
         return list;
     }
 
     // Installed providers that returned zero models (ordered as ProviderInfo.All).
-    static List<ProviderInfo> EmptyInstalledProviders(List<MenuItem> models, ProviderHub providers)
+    static List<ProviderInfo> EmptyInstalledProviders(
+        List<MenuItem> models,
+        ProviderHub providers,
+        LaunchConfig cfg,
+        bool includeLocalProviders)
     {
         var have = models.Select(m => m.Provider).ToHashSet();
         var list = new List<ProviderInfo>();
-        if (providers.HasOllama && !have.Contains("Ollama")) list.Add(ProviderInfo.Ollama);
-        if (providers.HasFoundry && !have.Contains("Foundry")) list.Add(ProviderInfo.Foundry);
-        if (providers.HasLmStudio && !have.Contains("LM Studio")) list.Add(ProviderInfo.LmStudio);
+        if (includeLocalProviders)
+        {
+            if (providers.HasOllama && !have.Contains("Ollama")) list.Add(ProviderInfo.Ollama);
+            if (providers.HasFoundry && !have.Contains("Foundry")) list.Add(ProviderInfo.Foundry);
+            if (providers.HasLmStudio && !have.Contains("LM Studio")) list.Add(ProviderInfo.LmStudio);
+        }
+        if (cfg.LiteLlmEnabled && !have.Contains("LiteLLM")) list.Add(ProviderInfo.LiteLlm);
         return list;
+    }
+
+    static bool ShouldAutoStartLiteLlm(LaunchConfig cfg, IReadOnlyList<MenuItem> models, ProviderInstaller installer)
+    {
+        if (!cfg.LiteLlmEnabled) return false;
+        if (models.Any(m => string.Equals(m.Provider, "LiteLLM", StringComparison.Ordinal))) return false;
+        if (!IsLoopbackLiteLlmEndpoint(cfg.LiteLlmBaseUrl)) return false;
+        return !installer.LiteLlmStatus(cfg).Running;
+    }
+
+    static bool IsLoopbackLiteLlmEndpoint(string baseUrl)
+    {
+        string normalized = LaunchConfig.NormalizeBaseUrl(baseUrl);
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri)) return false;
+        return uri.IsLoopback;
     }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using Copilocal.Infrastructure;
+using Copilocal.Launch;
 
 namespace Copilocal.Providers;
 
@@ -16,6 +17,30 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         {
             if (!_ollamaSet) { _ollama = proc.Which("ollama") ?? Path.Join(LocalAppData, "Programs", "Ollama", "ollama.exe"); _ollamaSet = true; }
             return _ollama!;
+        }
+    }
+
+    internal static IEnumerable<string> ParseLiteLlmModels(string json)
+    {
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch (JsonException) { yield break; }
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("data", out var data)
+                || data.ValueKind != JsonValueKind.Array) yield break;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in data.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("id", out var idEl)
+                    || idEl.ValueKind != JsonValueKind.String) continue;
+                string id = (idEl.GetString() ?? "").Trim();
+                if (id.Length == 0 || !seen.Add(id)) continue;
+                yield return id;
+            }
         }
     }
 
@@ -60,14 +85,22 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     // we render with whoever responded and mark stragglers (they'll be warm next run).
     const int DiscoverBudgetMs = 8000;
 
-    internal List<MenuItem> GatherModels(Action<string, int>? onProvider = null)
+    internal List<MenuItem> GatherModels(
+        bool includeLocalProviders = true,
+        bool includeLiteLlm = false,
+        Action<string, int>? onProvider = null)
     {
         // Query only installed providers, in parallel; report each provider's result
         // as it lands so the UI can log progress instead of looking like a hang.
         var pending = new List<(string Name, Task<List<MenuItem>> Task)>();
-        if (HasOllama) pending.Add(("Ollama", Task.Run(GatherOllama)));
-        if (HasFoundry) pending.Add(("Foundry Local", Task.Run(GatherFoundry)));
-        if (HasLmStudio) pending.Add(("LM Studio", Task.Run(GatherLmStudio)));
+        if (includeLocalProviders)
+        {
+            if (HasOllama) pending.Add(("Ollama", Task.Run(GatherOllama)));
+            if (HasFoundry) pending.Add(("Foundry Local", Task.Run(GatherFoundry)));
+            if (HasLmStudio) pending.Add(("LM Studio", Task.Run(GatherLmStudio)));
+        }
+        if (includeLiteLlm)
+            pending.Add(("LiteLLM", Task.Run(GatherLiteLlm)));
 
         var items = new List<MenuItem>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -135,6 +168,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 return LmStudioContextLength(m.Model, m.BaseUrl);
             case "Foundry":
                 return FoundryContextLength(m);
+            case "LiteLLM":
+                return 0;
             default:
                 return 0;   // unknown
         }
@@ -338,6 +373,66 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         return items;
     }
 
+    List<MenuItem> GatherLiteLlm()
+    {
+        var items = new List<MenuItem>();
+        var cfg = LaunchConfig.Load();
+        if (!cfg.LiteLlmEnabled) return items;
+        string baseUrl = LaunchConfig.NormalizeBaseUrl(cfg.LiteLlmBaseUrl);
+        string apiKey = ResolveLiteLlmApiKey(cfg);
+        const int maxAttempts = 5;
+        const int attemptTimeoutMs = 1_200;
+        const int retryDelayMs = 500;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                string body = http.GetString($"{baseUrl}/models", attemptTimeoutMs, apiKey);
+                foreach (var id in ParseLiteLlmModels(body))
+                    items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "LiteLLM", BaseUrl = baseUrl, Model = id, Tools = true });
+                return items;
+            }
+            catch (HttpRequestException ex) when (
+                attempt < maxAttempts &&
+                ex.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (OperationCanceledException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (JsonException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (InvalidOperationException) when (attempt < maxAttempts)
+            {
+                Thread.Sleep(retryDelayMs);
+            }
+            catch (HttpRequestException) { return items; }
+            catch (JsonException) { return items; }
+            catch (OperationCanceledException) { return items; }
+            catch (InvalidOperationException) { return items; }
+        }
+        return items;
+    }
+
+    static string ResolveLiteLlmApiKey(LaunchConfig cfg)
+    {
+        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKey))
+            return LaunchConfig.NormalizeLiteLlmApiKey(cfg.LiteLlmApiKey);
+        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKeyEnvVar))
+        {
+            string fromNamed = Environment.GetEnvironmentVariable(cfg.LiteLlmApiKeyEnvVar.Trim()) ?? "";
+            if (!string.IsNullOrWhiteSpace(fromNamed))
+                return LaunchConfig.NormalizeLiteLlmApiKey(fromNamed);
+        }
+        string fallback = Environment.GetEnvironmentVariable(LaunchConfig.DefaultLiteLlmApiKeyEnvVar) ?? "";
+        return LaunchConfig.NormalizeLiteLlmApiKey(fallback);
+    }
+
     internal static IEnumerable<(string Id, string LoadId, bool Tools)> ParseFoundry(string json)
     {
         var s = json.IndexOf('{'); var e = json.LastIndexOf('}');
@@ -428,6 +523,9 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 proc.Run(LmsExe, "server start", 60000);
                 return m.BaseUrl ?? "http://localhost:1234/v1";
 
+            case "LiteLLM":
+                return LaunchConfig.NormalizeBaseUrl(m.BaseUrl ?? LaunchConfig.DefaultLiteLlmBaseUrl);
+
             default: // Ollama autostarts its server
                 return m.BaseUrl ?? "http://localhost:11434/v1";
         }
@@ -441,6 +539,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         {
             case "Foundry": proc.Run(FoundryExe, $"model unload {m.LoadAlias ?? m.Model}", 60000); break;
             case "LM Studio": proc.Run(LmsExe, $"unload {m.Model}", 30000); break;
+            case "LiteLLM": break;
             default: proc.Run(OllamaExe, $"stop {m.Model}", 30000); break;   // Ollama
         }
     }
@@ -452,7 +551,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// (answer lands in a 'reasoning'/'reasoning_content' field) - on the chat/completions
     /// wire those produce empty 'content', making Copilot loop / Ollama 400. The caller
     /// switches reasoning models to the Responses wire API to avoid that.</summary>
-    internal (WarmStatus Status, string Detail, bool Reasoning) WarmUp(string baseUrl, string model)
+    internal (WarmStatus Status, string Detail, bool Reasoning) WarmUp(string baseUrl, string model, string? bearerToken = null)
     {
         try
         {
@@ -465,9 +564,9 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 "{\"model\":\"" + esc + "\"," +
                 "\"messages\":[{\"role\":\"user\",\"content\":\"Reply with one short sentence confirming you are ready.\"}]," +
                 "\"max_tokens\":48,\"temperature\":0}";
-            var (ok, status, body) = http.PostJson($"{baseUrl}/chat/completions", payload, 120_000);
+            var (ok, status, body) = http.PostJson($"{baseUrl}/chat/completions", payload, 120_000, bearerToken);
             if (!ok)
-                return (WarmStatus.Failed, $"HTTP {status}", false);
+                return (WarmStatus.Failed, HttpFailureDetail(status, body), false);
 
             // Reasoning models separate their thinking from the answer; field name varies
             // by provider: Ollama uses "reasoning", LM Studio/vLLM use "reasoning_content".
@@ -506,7 +605,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// gemma) that the trivial warm-up prompt misses, so we return a Reasoning flag for
     /// the caller to route via the Responses wire. Best-effort: anything other than a clear
     /// "emits-as-text" failure is reported as inconclusive (don't block).</summary>
-    internal (ToolStatus Status, string Detail, bool Reasoning) ProbeToolCalling(string baseUrl, string model)
+    internal (ToolStatus Status, string Detail, bool Reasoning) ProbeToolCalling(string baseUrl, string model, string? bearerToken = null)
     {
         try
         {
@@ -517,8 +616,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 "\"tools\":[{\"type\":\"function\",\"function\":{\"name\":\"get_time\"," +
                 "\"description\":\"Get the current time\",\"parameters\":{\"type\":\"object\",\"properties\":{}}}}]," +
                 "\"tool_choice\":\"auto\",\"max_tokens\":512,\"temperature\":0}";
-            var (ok, status, body) = http.PostJson($"{baseUrl}/chat/completions", payload, 120_000);
-            if (!ok) return (ToolStatus.Inconclusive, $"HTTP {status}", false);
+            var (ok, status, body) = http.PostJson($"{baseUrl}/chat/completions", payload, 120_000, bearerToken);
+            if (!ok) return (ToolStatus.Inconclusive, HttpFailureDetail(status, body), false);
             bool reasoning = !string.IsNullOrWhiteSpace(ExtractMessageField(body, "reasoning"))
                           || !string.IsNullOrWhiteSpace(ExtractMessageField(body, "reasoning_content"));
             if (HasToolCall(body)) return (ToolStatus.Ok, "native tool calling OK", reasoning);
@@ -583,12 +682,12 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     /// <summary>True if the provider exposes an OpenAI Responses endpoint (/v1/responses).
     /// Ollama and LM Studio do; this lets reasoning models work without the
     /// chat/completions null-content 400. A 404/405 means it isn't implemented.</summary>
-    internal bool SupportsResponses(string baseUrl)
+    internal bool SupportsResponses(string baseUrl, string? bearerToken = null)
     {
         try
         {
             // 404/405 => the route isn't implemented; any other status means it exists.
-            var (_, status, _) = http.PostJson($"{baseUrl}/responses", "{}", 10_000);
+            var (_, status, _) = http.PostJson($"{baseUrl}/responses", "{}", 10_000, bearerToken);
             return status is not (404 or 405);
         }
         catch (HttpRequestException)
@@ -650,6 +749,57 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     {
         string one = t.Replace('\n', ' ').Replace('\r', ' ').Trim();
         return one.Length > 60 ? one[..60] + "..." : one;
+    }
+
+    static string HttpFailureDetail(int status, string body)
+    {
+        string summary = ErrorSummary(body);
+        return summary.Length > 0 ? $"HTTP {status}: {summary}" : $"HTTP {status}";
+    }
+
+    static string ErrorSummary(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body)) return "";
+        try
+        {
+            using var d = JsonDocument.Parse(body);
+            var root = d.RootElement;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("error", out var error))
+                {
+                    string fromError = StringField(error, "message");
+                    if (fromError.Length > 0) return SingleLine(fromError);
+                    if (error.ValueKind == JsonValueKind.String)
+                        return SingleLine(error.GetString() ?? "");
+                }
+                string fromMessage = StringField(root, "message");
+                if (fromMessage.Length > 0) return SingleLine(fromMessage);
+                string fromDetail = StringField(root, "detail");
+                if (fromDetail.Length > 0) return SingleLine(fromDetail);
+            }
+            else if (root.ValueKind == JsonValueKind.String)
+                return SingleLine(root.GetString() ?? "");
+        }
+        catch (JsonException)
+        {
+            // best-effort: non-JSON bodies fall back to a first-line summary.
+        }
+        return SingleLine(body);
+    }
+
+    static string StringField(JsonElement obj, string name) =>
+        obj.ValueKind == JsonValueKind.Object
+        && obj.TryGetProperty(name, out var v)
+        && v.ValueKind == JsonValueKind.String
+            ? v.GetString() ?? ""
+            : "";
+
+    static string SingleLine(string text)
+    {
+        string line = (text ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+        const int max = 180;
+        return line.Length <= max ? line : $"{line[..max]}…";
     }
 
 }

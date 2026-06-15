@@ -1,5 +1,7 @@
 using Copilocal;
+using Copilocal.Launch;
 using Copilocal.Providers;
+using Copilocal.Tests.Fakes;
 using FluentAssertions;
 
 namespace Copilocal.Tests;
@@ -192,5 +194,155 @@ public sealed class ProviderHubTests
     {
         ProviderHub.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
             .ToList().Should().Equal("a");
+    }
+
+    [TestMethod]
+    public void ParseLiteLlmModels_ValidJson_ReturnsDistinctIds()
+    {
+        const string json = """
+            {
+              "object": "list",
+              "data": [
+                { "id": "gpt-4o", "object": "model" },
+                { "id": "qwen2.5-coder:7b", "object": "model" },
+                { "id": "gpt-4o", "object": "model" },
+                { "object": "model" }
+              ]
+            }
+            """;
+
+        ProviderHub.ParseLiteLlmModels(json)
+            .ToList()
+            .Should()
+            .Equal("gpt-4o", "qwen2.5-coder:7b");
+    }
+
+    [TestMethod]
+    public void ParseLiteLlmModels_WhitespaceIds_AreIgnored()
+    {
+        const string json = """
+            {
+              "data": [
+                { "id": "   " },
+                { "id": "\t" },
+                { "id": "gpt-4.1-mini" }
+              ]
+            }
+            """;
+
+        ProviderHub.ParseLiteLlmModels(json)
+            .ToList()
+            .Should()
+            .Equal("gpt-4.1-mini");
+    }
+
+    [TestMethod]
+    public void EnsureServer_LiteLlm_NormalizesBaseUrl()
+    {
+        var hub = new ProviderHub(new FakeProcessRunner(), new FakeHttpGateway());
+        var item = new MenuItem
+        {
+            Kind = MenuItemKind.Model,
+            Provider = "LiteLLM",
+            BaseUrl = " https://proxy.example.com/litellm/ ",
+            Model = "gpt-4o-mini",
+        };
+
+        hub.EnsureServer(item).Should().Be("https://proxy.example.com/litellm/v1");
+    }
+
+    [TestMethod]
+    public void ParseLiteLlmModels_WrongShapeOrMalformed_ReturnsEmpty()
+    {
+        ProviderHub.ParseLiteLlmModels("""{"data":"oops"}""").Should().BeEmpty();
+        ProviderHub.ParseLiteLlmModels("""{"x":1}""").Should().BeEmpty();
+        ProviderHub.ParseLiteLlmModels("{ not json").Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void GatherModels_LiteLlm_UsesConfiguredBearerToken()
+    {
+        RunWithIsolatedLaunchConfig("""
+            {
+              "liteLlmEnabled": true,
+              "liteLlmBaseUrl": "http://localhost:4000/v1",
+              "liteLlmApiKey": "test_key_lllm"
+            }
+            """, () =>
+        {
+            var proc = new FakeProcessRunner();
+            var http = new FakeHttpGateway();
+            http.AddGet("http://localhost:4000/v1/models", """{"data":[{"id":"ollama/qwen2.5-coder:7b"}]}""");
+            var hub = new ProviderHub(proc, http);
+
+            var models = hub.GatherModels(includeLocalProviders: false, includeLiteLlm: true);
+
+            models.Should().ContainSingle(m => m.Provider == "LiteLLM" && m.Model == "ollama/qwen2.5-coder:7b");
+            http.GetCalls.Should().ContainSingle();
+            http.GetCalls[0].Url.Should().Be("http://localhost:4000/v1/models");
+            http.GetCalls[0].BearerToken.Should().Be("sk-test_key_lllm");
+        });
+    }
+
+    [TestMethod]
+    public void GatherModels_LiteLlm_RetriesWhileProxyStartsAndThenReturnsModels()
+    {
+        RunWithIsolatedLaunchConfig("""
+            {
+              "liteLlmEnabled": true,
+              "liteLlmBaseUrl": "http://localhost:4000/v1",
+              "liteLlmApiKey": "test_key_lllm"
+            }
+            """, () =>
+        {
+            var proc = new FakeProcessRunner();
+            var http = new FakeHttpGateway();
+            const string modelsUrl = "http://localhost:4000/v1/models";
+            http.AddGetException(modelsUrl, new HttpRequestException("connection refused"));
+            http.AddGetException(modelsUrl, new HttpRequestException("connection refused"));
+            http.AddGet(modelsUrl, """{"data":[{"id":"ollama/qwen2.5-coder:7b"}]}""");
+            var hub = new ProviderHub(proc, http);
+
+            var models = hub.GatherModels(includeLocalProviders: false, includeLiteLlm: true);
+
+            models.Should().ContainSingle(m => m.Provider == "LiteLLM" && m.Model == "ollama/qwen2.5-coder:7b");
+            http.GetCalls.Should().HaveCount(3);
+            http.GetCalls.Should().OnlyContain(c => c.BearerToken == "sk-test_key_lllm");
+        });
+    }
+
+    private static void RunWithIsolatedLaunchConfig(string configJson, Action action)
+    {
+        string path = LaunchConfig.FilePath;
+        string? dir = Path.GetDirectoryName(path);
+        string backup = Path.Join(Path.GetTempPath(), $"copilocal-config-backup-{Guid.NewGuid():N}.json");
+        bool hadFile = File.Exists(path);
+        if (hadFile) File.Copy(path, backup, overwrite: true);
+
+        try
+        {
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(path, configJson);
+            action();
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+
+            if (hadFile && File.Exists(backup))
+            {
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                File.Copy(backup, path, overwrite: true);
+            }
+
+            try { if (File.Exists(backup)) File.Delete(backup); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
     }
 }

@@ -54,6 +54,54 @@ internal static class LaunchOptionsPage
                 .ShowDefaultValue(cfg.ExtraArgs.Length > 0));
         cfg.ExtraArgs = (extra ?? "").Trim();
 
+        // LiteLLM provider controls.
+        cfg.LiteLlmEnabled = AnsiConsole.Prompt(new ConfirmationPrompt(
+            "Enable [teal]LiteLLM[/] provider in picker?") { DefaultValue = cfg.LiteLlmEnabled });
+
+        if (cfg.LiteLlmEnabled)
+        {
+            string baseUrl = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM base URL [dim](OpenAI-compatible, /v1 default)[/]:")
+                    .AllowEmpty()
+                    .DefaultValue(cfg.LiteLlmBaseUrl)
+                    .ShowDefaultValue(true));
+            cfg.LiteLlmBaseUrl = LaunchConfig.NormalizeBaseUrl(baseUrl);
+
+            string envVar = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM key env var [dim](preferred secret path)[/]:")
+                    .AllowEmpty()
+                    .DefaultValue(cfg.LiteLlmApiKeyEnvVar)
+                    .ShowDefaultValue(true));
+            cfg.LiteLlmApiKeyEnvVar = string.IsNullOrWhiteSpace(envVar) ? LaunchConfig.DefaultLiteLlmApiKeyEnvVar : envVar.Trim();
+            AnsiConsole.MarkupLine(
+                "[dim]Hint:[/] Local LiteLLM accepts any non-empty secret (normalized to [white]sk-...[/]); external LiteLLM must use its configured proxy key.");
+
+            string apiKey = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM API key [dim](required)[/]:")
+                    .DefaultValue(cfg.LiteLlmApiKey)
+                    .ShowDefaultValue(cfg.LiteLlmApiKey.Length > 0)
+                    .Validate(v => string.IsNullOrWhiteSpace(v)
+                        ? ValidationResult.Error("[red]LiteLLM API key is required.[/]")
+                        : ValidationResult.Success()));
+            string enteredKey = (apiKey ?? "").Trim();
+            cfg.LiteLlmApiKey = LaunchConfig.NormalizeLiteLlmApiKey(enteredKey);
+            if (enteredKey.Length > 0 && !enteredKey.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
+                AnsiConsole.MarkupLine("[dim]Hint:[/] LiteLLM keys are normalized to [white]sk-...[/].");
+
+            cfg.LiteLlmRuntimeMode = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("LiteLLM runtime mode [dim](used by install/manage flows)[/]:")
+                    .AddChoices(LaunchConfig.LiteLlmRuntimeModes));
+
+            cfg.HideLocalProvidersWhenLiteLlm = AnsiConsole.Prompt(new ConfirmationPrompt(
+                "Hide local providers [dim](Ollama/Foundry/LM Studio)[/] when LiteLLM is enabled?")
+            { DefaultValue = cfg.HideLocalProvidersWhenLiteLlm });
+        }
+        else
+        {
+            cfg.HideLocalProvidersWhenLiteLlm = false;
+        }
+
         cfg.Save();
 
         var preview = cfg.ToArgs(providers.ConfiguredMcpServers);
@@ -78,4 +126,5 @@ internal static class LaunchOptionsPage
                     : ValidationResult.Error("[red]Enter a non-negative number (or leave blank)[/]")));
         return int.TryParse(s, out var val) && val > 0 ? val : 0;
     }
+
 }

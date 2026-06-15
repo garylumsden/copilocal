@@ -38,6 +38,9 @@ internal sealed class LaunchConfig
     };
 
     internal static readonly string[] ReasoningEfforts = { "none", "low", "medium", "high", "xhigh", "max" };
+    internal static readonly string[] LiteLlmRuntimeModes = { "docker", "python" };
+    internal const string DefaultLiteLlmBaseUrl = "http://localhost:4000/v1";
+    internal const string DefaultLiteLlmApiKeyEnvVar = "LITELLM_MASTER_KEY";
 
     /// <summary>Enabled tokens from <see cref="Catalog"/>.</summary>
     internal HashSet<string> Flags { get; set; } = new();
@@ -49,6 +52,18 @@ internal sealed class LaunchConfig
     internal int MaxOutputTokens { get; set; }
     /// <summary>Any other raw copilot args, space-separated.</summary>
     internal string ExtraArgs { get; set; } = "";
+    /// <summary>Enable LiteLLM provider discovery and launch path in the picker.</summary>
+    internal bool LiteLlmEnabled { get; set; }
+    /// <summary>When LiteLLM is enabled, hide local provider rows from the picker.</summary>
+    internal bool HideLocalProvidersWhenLiteLlm { get; set; }
+    /// <summary>LiteLLM OpenAI-compatible base URL.</summary>
+    internal string LiteLlmBaseUrl { get; set; } = DefaultLiteLlmBaseUrl;
+    /// <summary>Optional explicit LiteLLM API key (env var remains preferred).</summary>
+    internal string LiteLlmApiKey { get; set; } = "";
+    /// <summary>Environment variable name to read LiteLLM API key from.</summary>
+    internal string LiteLlmApiKeyEnvVar { get; set; } = DefaultLiteLlmApiKeyEnvVar;
+    /// <summary>LiteLLM runtime mode selected for install/lifecycle actions.</summary>
+    internal string LiteLlmRuntimeMode { get; set; } = "docker";
 
     static string Dir => Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
     internal static string FilePath => Path.Join(Dir, "config.json");
@@ -72,6 +87,16 @@ internal sealed class LaunchConfig
             c.MaxPromptTokens = GetInt(r, "maxPromptTokens");
             c.MaxOutputTokens = GetInt(r, "maxOutputTokens");
             c.ExtraArgs = GetStr(r, "extraArgs");
+            c.LiteLlmEnabled = GetBool(r, "liteLlmEnabled");
+            c.HideLocalProvidersWhenLiteLlm = GetBool(r, "hideLocalProvidersWhenLiteLlm");
+            c.LiteLlmBaseUrl = NormalizeBaseUrl(GetStr(r, "liteLlmBaseUrl"));
+            c.LiteLlmApiKey = NormalizeLiteLlmApiKey(GetStr(r, "liteLlmApiKey"));
+            c.LiteLlmApiKeyEnvVar = GetStr(r, "liteLlmApiKeyEnvVar");
+            c.LiteLlmRuntimeMode = GetStr(r, "liteLlmRuntimeMode");
+            if (string.IsNullOrWhiteSpace(c.LiteLlmApiKeyEnvVar))
+                c.LiteLlmApiKeyEnvVar = DefaultLiteLlmApiKeyEnvVar;
+            if (Array.IndexOf(LiteLlmRuntimeModes, c.LiteLlmRuntimeMode) < 0)
+                c.LiteLlmRuntimeMode = "docker";
         }
         catch (IOException)
         {
@@ -113,6 +138,12 @@ internal sealed class LaunchConfig
             w.WriteNumber("maxPromptTokens", MaxPromptTokens);
             w.WriteNumber("maxOutputTokens", MaxOutputTokens);
             w.WriteString("extraArgs", ExtraArgs);
+            w.WriteBoolean("liteLlmEnabled", LiteLlmEnabled);
+            w.WriteBoolean("hideLocalProvidersWhenLiteLlm", HideLocalProvidersWhenLiteLlm);
+            w.WriteString("liteLlmBaseUrl", NormalizeBaseUrl(LiteLlmBaseUrl));
+            w.WriteString("liteLlmApiKey", NormalizeLiteLlmApiKey(LiteLlmApiKey));
+            w.WriteString("liteLlmApiKeyEnvVar", LiteLlmApiKeyEnvVar);
+            w.WriteString("liteLlmRuntimeMode", LiteLlmRuntimeMode);
             w.WriteEndObject();
         }
         catch (IOException)
@@ -150,6 +181,26 @@ internal sealed class LaunchConfig
 
     static int GetInt(JsonElement r, string name) =>
         r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var i) ? i : 0;
+
+    static bool GetBool(JsonElement r, string name) =>
+        r.TryGetProperty(name, out var v) && (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False) && v.GetBoolean();
+
+    internal static string NormalizeBaseUrl(string raw)
+    {
+        string trimmed = (raw ?? "").Trim();
+        if (trimmed.Length == 0) return DefaultLiteLlmBaseUrl;
+        string noSlash = trimmed.TrimEnd('/');
+        return noSlash.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? noSlash : $"{noSlash}/v1";
+    }
+
+    internal static string NormalizeLiteLlmApiKey(string raw)
+    {
+        string trimmed = (raw ?? "").Trim();
+        if (trimmed.Length == 0) return "";
+        return trimmed.StartsWith("sk-", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"sk-{trimmed}";
+    }
 
     /// <summary>Split a raw argument string on whitespace, honoring double quotes.</summary>
     static IEnumerable<string> SplitArgs(string s)

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Copilocal;
+namespace Copilocal.Infrastructure;
 
 internal static class Json
 {

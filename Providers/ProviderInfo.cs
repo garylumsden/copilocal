@@ -1,4 +1,4 @@
-namespace Copilocal;
+namespace Copilocal.Providers;
 
 /// <summary>Static metadata about each supported local-model provider.</summary>
 internal sealed class ProviderInfo

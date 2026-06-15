@@ -1,6 +1,8 @@
 using System.Text.Json;
 
-namespace Copilocal;
+using Copilocal.Infrastructure;
+
+namespace Copilocal.Providers;
 
 internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
 {

@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace Copilocal;
+namespace Copilocal.Launch;
 
 /// <summary>User-configurable flags applied to the `copilot` launch, persisted to
 /// ~/.copilocal/config.json. Set via the "Configure launch options" menu item.</summary>

@@ -1,6 +1,8 @@
 using Spectre.Console;
 
-namespace Copilocal;
+using Copilocal.Providers;
+
+namespace Copilocal.Ui;
 
 /// <summary>Interactive "install / manage providers" flow: an informed-decision table plus a
 /// checkbox multi-select that installs the chosen runtimes.</summary>

@@ -1,4 +1,4 @@
-namespace Copilocal;
+namespace Copilocal.Cli;
 
 /// <summary>Parsed command-line arguments. copilocal consumes its own flags and forwards the
 /// remainder (after an optional <c>--</c>) to <c>copilot</c>.</summary>

@@ -1,6 +1,9 @@
 using Spectre.Console;
 
-namespace Copilocal;
+using Copilocal.Infrastructure;
+using Copilocal.Providers;
+
+namespace Copilocal.Launch;
 
 /// <summary>Per-launch options resolved from the CLI args and the interactive flow.</summary>
 internal sealed record LaunchOptions(
@@ -14,7 +17,7 @@ internal sealed record LaunchOptions(
 
 /// <summary>Validates the chosen model, builds the BYOK environment, and launches copilot
 /// against it. The env vars are set only on the copilot child process, never persisted.</summary>
-internal sealed class Launcher(Providers providers, IProcessRunner proc)
+internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
 {
     const int OutputTokenContextDivisor = 4;  // leave most context for prompt/tool payload.
     const int MinAutoOutputTokens = 1_024;    // keep enough completion room for Copilot replies.
@@ -59,19 +62,19 @@ internal sealed class Launcher(Providers providers, IProcessRunner proc)
 
             switch (warm.Status)
             {
-                case Providers.WarmStatus.Failed:
+                case ProviderHub.WarmStatus.Failed:
                     // A reasoning model we can route via /v1/responses isn't a real failure.
                     if (warm.Reasoning && useResponses) break;
                     AnsiConsole.MarkupLine($"[red]Warm-up failed:[/] {Markup.Escape(warm.Detail)}");
                     if (opts.Interactive && !AnsiConsole.Prompt(new ConfirmationPrompt("Launch Copilot anyway?") { DefaultValue = false }))
                         return false;
                     break;
-                case Providers.WarmStatus.Suspect:
+                case ProviderHub.WarmStatus.Suspect:
                     AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(warm.Detail)}");
                     if (opts.Interactive && !AnsiConsole.Prompt(new ConfirmationPrompt("Launch Copilot anyway?") { DefaultValue = true }))
                         return false;
                     break;
-                case Providers.WarmStatus.Ok when !useResponses:
+                case ProviderHub.WarmStatus.Ok when !useResponses:
                     // Copilot's agentic loop needs native tool calling. Some models are
                     // advertised as tool-capable but emit the call as plain text (breaks
                     // Copilot). The probe's substantive prompt also surfaces *conditional*
@@ -84,7 +87,7 @@ internal sealed class Launcher(Providers providers, IProcessRunner proc)
                         useResponses = true;
                         AnsiConsole.MarkupLine("[teal]Reasoning model detected[/] [dim](during tool probe)[/] — using the OpenAI [white]Responses[/] wire API [dim](/v1/responses)[/].");
                     }
-                    else if (tool.Status == Providers.ToolStatus.NotNative)
+                    else if (tool.Status == ProviderHub.ToolStatus.NotNative)
                     {
                         AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(tool.Detail)}");
                         if (opts.Interactive && !AnsiConsole.Prompt(new ConfirmationPrompt("Launch Copilot anyway?") { DefaultValue = false }))
@@ -148,7 +151,7 @@ internal sealed class Launcher(Providers providers, IProcessRunner proc)
     }
 
     /// <summary>Derive Copilot's token budget from a model's real context window (config overrides win).</summary>
-    internal static (int Prompt, int Output) TokenLimits(LaunchConfig cfg, MenuItem m, Providers providers) =>
+    internal static (int Prompt, int Output) TokenLimits(LaunchConfig cfg, MenuItem m, ProviderHub providers) =>
         TokenLimits(cfg, providers.ModelContextLength(m));
 
     internal static (int Prompt, int Output) TokenLimits(LaunchConfig cfg, int ctx)

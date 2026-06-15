@@ -2,7 +2,7 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text;
 
-namespace Copilocal;
+namespace Copilocal.Infrastructure;
 
 internal sealed class HttpGateway : IHttpGateway
 {

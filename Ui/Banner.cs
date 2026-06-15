@@ -1,6 +1,6 @@
 using Spectre.Console;
 
-namespace Copilocal;
+namespace Copilocal.Ui;
 
 /// <summary>Renders the startup ASCII banner.</summary>
 internal static class Banner

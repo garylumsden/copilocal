@@ -1,4 +1,4 @@
-namespace Copilocal;
+namespace Copilocal.Providers;
 
 internal enum MenuItemKind
 {

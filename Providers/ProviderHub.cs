@@ -1,9 +1,11 @@
 using System.Text.Json;
 
-namespace Copilocal;
+using Copilocal.Infrastructure;
+
+namespace Copilocal.Providers;
 
 /// <summary>Discovers installed providers, their models, and performs installs.</summary>
-internal sealed class Providers(IProcessRunner proc, IHttpGateway http)
+internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
 {
     string? _ollama, _foundry, _lms;
     bool _ollamaSet, _foundrySet, _lmsSet;

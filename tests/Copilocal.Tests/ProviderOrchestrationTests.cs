@@ -1,4 +1,6 @@
 using Copilocal;
+using Copilocal.Infrastructure;
+using Copilocal.Providers;
 using Copilocal.Tests.Fakes;
 using FluentAssertions;
 
@@ -18,13 +20,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: Completion(content: "A compiler translates source code into executable programs."));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Ok);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Ok);
         result.Reasoning.Should().BeFalse();
         result.Detail.Should().Contain("compiler translates source code");
         http.PostCalls.Should().ContainSingle()
@@ -38,13 +40,13 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200, body: Completion(content: "", reasoning: "thinking"));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "reasoner");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Failed);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Failed);
         result.Reasoning.Should().BeTrue();
         result.Detail.Should().Contain("reasoning model");
     }
@@ -56,13 +58,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: Completion(content: "", reasoningContent: "thinking"));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "reasoner");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Failed);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Failed);
         result.Reasoning.Should().BeTrue();
         result.Detail.Should().Contain("reasoning model");
     }
@@ -73,13 +75,13 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200, body: Completion(content: ""));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Failed);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Failed);
         result.Reasoning.Should().BeFalse();
         result.Detail.Should().Be("empty response");
     }
@@ -90,13 +92,13 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: false, status: 503, body: "unavailable");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Failed);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Failed);
         result.Reasoning.Should().BeFalse();
         result.Detail.Should().Be("HTTP 503");
     }
@@ -107,13 +109,13 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200, body: Completion(content: "90. 111 161 .222 33r 440 666"));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.WarmUp(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.WarmStatus.Suspect);
+        result.Status.Should().Be(ProviderHub.WarmStatus.Suspect);
         result.Reasoning.Should().BeFalse();
         result.Detail.Should().Contain("output looks garbled");
     }
@@ -128,7 +130,7 @@ public sealed class ProviderOrchestrationTests
         {
             var http = new FakeHttpGateway();
             http.AddPost(ResponsesUrl, ok: false, status: status, body: "");
-            var providers = new Providers(new FakeProcessRunner(), http);
+            var providers = new ProviderHub(new FakeProcessRunner(), http);
 
             // Act
             var result = providers.SupportsResponses(BaseUrl);
@@ -148,7 +150,7 @@ public sealed class ProviderOrchestrationTests
         {
             var http = new FakeHttpGateway();
             http.AddPost(ResponsesUrl, testCase.Ok, testCase.Status, "");
-            var providers = new Providers(new FakeProcessRunner(), http);
+            var providers = new ProviderHub(new FakeProcessRunner(), http);
 
             // Act
             var result = providers.SupportsResponses(BaseUrl);
@@ -164,7 +166,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPostException(ResponsesUrl, new InvalidOperationException("connection refused"));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.SupportsResponses(BaseUrl);
@@ -185,7 +187,7 @@ public sealed class ProviderOrchestrationTests
               "max_context_length": 32768
             }
             """));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ModelContextLength(LmStudioItem("target"));
@@ -206,7 +208,7 @@ public sealed class ProviderOrchestrationTests
               "max_context_length": 32768
             }
             """));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ModelContextLength(LmStudioItem("target"));
@@ -227,7 +229,7 @@ public sealed class ProviderOrchestrationTests
               "max_context_length": 32768
             }
             """));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ModelContextLength(LmStudioItem("target"));
@@ -242,7 +244,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddGet("http://localhost:1234/api/v1/models", "{ not json");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ModelContextLength(LmStudioItem("target"));
@@ -259,7 +261,7 @@ public sealed class ProviderOrchestrationTests
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json",
             stdout: """noise {"model":{"alias":"phi4-mini","contextLength":131072,"supportsToolCalling":true}} trailing""");
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
@@ -276,7 +278,7 @@ public sealed class ProviderOrchestrationTests
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info qwen2.5-coder-1.5b -o json",
             stdout: """{"model":{"alias":"qwen2.5-coder-1.5b","contextLength":4224}}""");
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.ModelContextLength(FoundryItem("qwen npu", "qwen2.5-coder-1.5b"));
@@ -292,7 +294,7 @@ public sealed class ProviderOrchestrationTests
         var proc = new FakeProcessRunner();
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", code: 1, stderr: "boom");
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
@@ -308,7 +310,7 @@ public sealed class ProviderOrchestrationTests
         var proc = new FakeProcessRunner();
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", stdout: "{ not json");
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.ModelContextLength(FoundryItem("Phi-4 Mini", "phi4-mini"));
@@ -324,13 +326,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: """{"choices":[{"message":{"content":"","tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.ToolStatus.Ok);
+        result.Status.Should().Be(ProviderHub.ToolStatus.Ok);
     }
 
     [TestMethod]
@@ -340,13 +342,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: Completion(content: """{"name": "get_time", "arguments": {}}"""));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.ToolStatus.NotNative);
+        result.Status.Should().Be(ProviderHub.ToolStatus.NotNative);
     }
 
     [TestMethod]
@@ -356,13 +358,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: Completion(content: "I am unable to determine the current time."));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.ToolStatus.Inconclusive);
+        result.Status.Should().Be(ProviderHub.ToolStatus.Inconclusive);
     }
 
     [TestMethod]
@@ -371,13 +373,13 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: false, status: 500, body: "");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.ToolStatus.Inconclusive);
+        result.Status.Should().Be(ProviderHub.ToolStatus.Inconclusive);
     }
 
     [TestMethod]
@@ -386,16 +388,16 @@ public sealed class ProviderOrchestrationTests
     [DataRow("I am ready to help.", false)]
     [DataRow("", false)]
     public void LooksLikeToolCallText_ClassifiesContent(string content, bool expected) =>
-        Providers.LooksLikeToolCallText(content).Should().Be(expected);
+        ProviderHub.LooksLikeToolCallText(content).Should().Be(expected);
 
     [TestMethod]
     public void HasToolCall_EmptyToolCallsArray_ReturnsFalse() =>
-        Providers.HasToolCall("""{"choices":[{"message":{"content":"hi","tool_calls":[]}}]}""")
+        ProviderHub.HasToolCall("""{"choices":[{"message":{"content":"hi","tool_calls":[]}}]}""")
             .Should().BeFalse();
 
     [TestMethod]
     public void HasToolCall_PopulatedToolCallsArray_ReturnsTrue() =>
-        Providers.HasToolCall("""{"choices":[{"message":{"tool_calls":[{"function":{"name":"x"}}]}}]}""")
+        ProviderHub.HasToolCall("""{"choices":[{"message":{"tool_calls":[{"function":{"name":"x"}}]}}]}""")
             .Should().BeTrue();
 
     [TestMethod]
@@ -405,7 +407,7 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         providers.ProbeToolCalling(BaseUrl, "model");
@@ -424,7 +426,7 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         providers.ProbeToolCalling(BaseUrl, "model");
@@ -441,13 +443,13 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: """{"choices":[{"message":{"content":"","reasoning_content":"Let me think...","tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
 
         // Assert
-        result.Status.Should().Be(Providers.ToolStatus.Ok);
+        result.Status.Should().Be(ProviderHub.ToolStatus.Ok);
         result.Reasoning.Should().BeTrue();
     }
 
@@ -458,7 +460,7 @@ public sealed class ProviderOrchestrationTests
         var http = new FakeHttpGateway();
         http.AddPost(ChatUrl, ok: true, status: 200,
             body: """{"choices":[{"message":{"tool_calls":[{"function":{"name":"get_time"}}]}}]}""");
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act
         var result = providers.ProbeToolCalling(BaseUrl, "model");
@@ -473,7 +475,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var proc = new FakeProcessRunner();
         proc.WhichResults["ollama"] = @"C:\fake\ollama.exe";
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         providers.Unload(new MenuItem { Kind = MenuItemKind.Model, Provider = "Ollama", Model = "llama3" });
@@ -489,7 +491,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var proc = new FakeProcessRunner();
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         providers.Unload(new MenuItem
@@ -511,7 +513,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var proc = new FakeProcessRunner();
         proc.WhichResults["lms"] = @"C:\fake\lms.exe";
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         providers.Unload(new MenuItem { Kind = MenuItemKind.Model, Provider = "LM Studio", Model = "qwen" });
@@ -530,7 +532,7 @@ public sealed class ProviderOrchestrationTests
         proc.AddRun(@"C:\fake\foundry.exe", "server start", timeoutMs: 60_000);
         proc.AddRun(@"C:\fake\foundry.exe", "server status -o json", stdout: """noise {"webUrls":["http://127.0.0.1:9999"]}""");
         proc.AddRun(@"C:\fake\foundry.exe", "model load phi4-mini", timeoutMs: 180_000);
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.EnsureServer(new MenuItem
@@ -555,7 +557,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var proc = new FakeProcessRunner();
         proc.WhichResults["lms"] = @"C:\fake\lms.exe";
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.EnsureServer(new MenuItem { Kind = MenuItemKind.Model, Provider = "LM Studio", Model = "qwen" });
@@ -571,7 +573,7 @@ public sealed class ProviderOrchestrationTests
     {
         // Arrange
         var proc = new FakeProcessRunner();
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act
         var result = providers.EnsureServer(new MenuItem { Kind = MenuItemKind.Model, Provider = "Ollama", Model = "llama3" });
@@ -587,7 +589,7 @@ public sealed class ProviderOrchestrationTests
         // Arrange
         var proc = new FakeProcessRunner();
         proc.WhichResults["copilot"] = @"C:\fake\copilot.exe";
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
 
         // Act / Assert
         providers.HasCopilot.Should().BeTrue();
@@ -597,7 +599,7 @@ public sealed class ProviderOrchestrationTests
     public void HasCopilot_WhenCopilotMissing_ReturnsFalse()
     {
         // Arrange
-        var providers = new Providers(new FakeProcessRunner(), new FakeHttpGateway());
+        var providers = new ProviderHub(new FakeProcessRunner(), new FakeHttpGateway());
 
         // Act / Assert
         providers.HasCopilot.Should().BeFalse();

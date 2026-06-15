@@ -276,6 +276,22 @@ Run the test suite:
 dotnet test tests/Copilocal.Tests/Copilocal.Tests.csproj
 ```
 
+### Project layout
+
+Source is grouped by responsibility, one namespace per folder:
+
+| Folder / namespace | What's in it |
+| --- | --- |
+| `Copilocal` (root) | `Program` — entry point and interactive orchestration |
+| `Cli` → `Copilocal.Cli` | `CommandLineArgs` — argv parsing |
+| `Providers` → `Copilocal.Providers` | `ProviderHub` (discovery + lifecycle), `ProviderInfo`, `ProviderInstaller`, `MenuItem` |
+| `Launch` → `Copilocal.Launch` | `Launcher`, `Preflight` (guards), `LaunchConfig` |
+| `Ui` → `Copilocal.Ui` | `Banner`, `InstallFlow`, `LaunchOptionsPage` (Spectre.Console pages) |
+| `Infrastructure` → `Copilocal.Infrastructure` | `ProcessRunner`/`HttpGateway` (+ interfaces), `Json` |
+
+Dependency direction stays one-way: `Infrastructure ← Providers ← Launch ← Ui`, with `Cli`
+standalone and `Program` wiring everything together.
+
 ## Contributing
 
 Issues and PRs are welcome. Please keep changes small and focused, run

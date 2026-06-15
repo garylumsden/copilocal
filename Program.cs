@@ -1,6 +1,12 @@
 using System.Text;
 using Spectre.Console;
 
+using Copilocal.Cli;
+using Copilocal.Infrastructure;
+using Copilocal.Launch;
+using Copilocal.Providers;
+using Copilocal.Ui;
+
 namespace Copilocal;
 
 /// <summary>Entry point and interactive orchestration: discover local models, present the
@@ -16,7 +22,7 @@ internal static class Program
         }
         IProcessRunner proc = new ProcessRunner();
         IHttpGateway http = new HttpGateway();
-        var providers = new Providers(proc, http);
+        var providers = new ProviderHub(proc, http);
         var installer = new ProviderInstaller(proc, http);
         var launcher = new Launcher(providers, proc);
 
@@ -140,7 +146,7 @@ internal static class Program
 
     // copilocal launches `copilot`, so a missing CLI means nothing works. Offer to install it
     // (winget, Windows) at startup; on other OSes or non-interactive runs just point at the docs.
-    static void EnsureCopilotCli(Providers providers, ProviderInstaller installer, bool interactive)
+    static void EnsureCopilotCli(ProviderHub providers, ProviderInstaller installer, bool interactive)
     {
         if (providers.HasCopilot) return;
 
@@ -207,7 +213,7 @@ internal static class Program
 
     // ---------------- helpers ----------------
 
-    static List<ProviderInfo> MissingProviders(Providers providers)
+    static List<ProviderInfo> MissingProviders(ProviderHub providers)
     {
         var list = new List<ProviderInfo>();
         if (!providers.HasOllama) list.Add(ProviderInfo.Ollama);
@@ -217,7 +223,7 @@ internal static class Program
     }
 
     // Installed providers that returned zero models (ordered as ProviderInfo.All).
-    static List<ProviderInfo> EmptyInstalledProviders(List<MenuItem> models, Providers providers)
+    static List<ProviderInfo> EmptyInstalledProviders(List<MenuItem> models, ProviderHub providers)
     {
         var have = models.Select(m => m.Provider).ToHashSet();
         var list = new List<ProviderInfo>();

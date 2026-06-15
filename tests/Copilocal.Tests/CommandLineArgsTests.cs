@@ -1,4 +1,5 @@
 using Copilocal;
+using Copilocal.Cli;
 using FluentAssertions;
 
 namespace Copilocal.Tests;

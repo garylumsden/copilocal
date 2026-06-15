@@ -1,4 +1,4 @@
-using Copilocal;
+using Copilocal.Infrastructure;
 
 namespace Copilocal.Tests.Fakes;
 

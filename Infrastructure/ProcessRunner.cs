@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Copilocal;
+namespace Copilocal.Infrastructure;
 
 /// <summary>Thin wrapper for running CLI tools and capturing their output.</summary>
 internal sealed class ProcessRunner : IProcessRunner

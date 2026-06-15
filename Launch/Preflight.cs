@@ -1,6 +1,8 @@
 using Spectre.Console;
 
-namespace Copilocal;
+using Copilocal.Providers;
+
+namespace Copilocal.Launch;
 
 /// <summary>Pre-launch guards that warn before copilocal hands Copilot a model likely to fail:
 /// one that doesn't advertise tool calling, or whose context window is too small for Copilot's
@@ -9,7 +11,7 @@ namespace Copilocal;
 internal static class Preflight
 {
     /// <summary>Run all guards. Returns true if the launch should proceed.</summary>
-    internal static bool Ok(MenuItem m, bool interactive, Providers providers) =>
+    internal static bool Ok(MenuItem m, bool interactive, ProviderHub providers) =>
         ToolCallingOk(m, interactive) && ContextOk(m, interactive, providers);
 
     // ---------------- tool calling ----------------
@@ -30,10 +32,10 @@ internal static class Preflight
 
     // ---------------- context window ----------------
 
-    static bool ContextOk(MenuItem m, bool interactive, Providers providers)
+    static bool ContextOk(MenuItem m, bool interactive, ProviderHub providers)
     {
         int ctx = providers.ModelContextLength(m);   // 0 = unknown -> can't judge, don't block
-        if (ctx == 0 || ctx >= Providers.MinContext) return true;
+        if (ctx == 0 || ctx >= ProviderHub.MinContext) return true;
 
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Panel(ContextBody(m, ctx, providers))
@@ -41,7 +43,7 @@ internal static class Preflight
         return AskLaunchAnyway(interactive);
     }
 
-    static string ContextBody(MenuItem m, int ctx, Providers providers) => m.Provider switch
+    static string ContextBody(MenuItem m, int ctx, ProviderHub providers) => m.Provider switch
     {
         "Ollama" => OllamaBody(providers),
         "Foundry" => FoundryBody(ctx),
@@ -49,12 +51,12 @@ internal static class Preflight
         _ => GenericBody(ctx),
     };
 
-    static string OllamaBody(Providers providers)
+    static string OllamaBody(ProviderHub providers)
     {
         int env = providers.OllamaContextLength();
         string state = env == 0
             ? "[yellow]OLLAMA_CONTEXT_LENGTH is not set[/], so Ollama defaults to a 4096-token context."
-            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/] — below the {Providers.MinContext} copilocal considers safe.";
+            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/] — below the {ProviderHub.MinContext} copilocal considers safe.";
         return state + "\n" +
             "Copilot's system prompt + tools are larger, so the prompt gets truncated —\n" +
             "you'll see blank replies, a \"continue\" loop, or [white]400 invalid message content type: <nil>[/].\n\n" +
@@ -70,13 +72,13 @@ internal static class Preflight
         "LM Studio with a big context, where the GPU/CPU path isn't capped like the NPU build.[/]";
 
     static string LmStudioBody(int ctx) =>
-        $"[yellow]This model is loaded with a {ctx}-token context[/] — below the {Providers.MinContext} copilocal considers safe.\n" +
+        $"[yellow]This model is loaded with a {ctx}-token context[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +
         "Copilot's prompt is larger and gets truncated (blank/garbled replies).\n\n" +
         "[dim]In LM Studio, load the model with a larger context length (the load dialog / 'Context\n" +
         "Length' setting), then re-run copilocal.[/]";
 
     static string GenericBody(int ctx) =>
-        $"[yellow]This model's context is {ctx} tokens[/] — below the {Providers.MinContext} copilocal considers safe.\n" +
+        $"[yellow]This model's context is {ctx} tokens[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +
         "Copilot's prompt is larger and may be truncated.\n\n" +
         "[dim]Load this model with a larger context, or pick one with a bigger window.[/]";
 

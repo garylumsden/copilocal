@@ -1,10 +1,11 @@
 using Copilocal;
+using Copilocal.Providers;
 using FluentAssertions;
 
 namespace Copilocal.Tests;
 
 [TestClass]
-public sealed class ProvidersTests
+public sealed class ProviderHubTests
 {
     [TestMethod]
     public void LooksGarbled_CoherentProse_ReturnsFalse()
@@ -13,7 +14,7 @@ public sealed class ProvidersTests
         const string text = "This model responds with coherent prose across several normal English words.";
 
         // Act
-        var result = Providers.LooksGarbled(text);
+        var result = ProviderHub.LooksGarbled(text);
 
         // Assert
         result.Should().BeFalse();
@@ -26,7 +27,7 @@ public sealed class ProvidersTests
         const string text = "UKUKUKUKUK";
 
         // Act
-        var result = Providers.LooksGarbled(text);
+        var result = ProviderHub.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -39,7 +40,7 @@ public sealed class ProvidersTests
         const string text = "90. 111 161 .222 33r 440 666";
 
         // Act
-        var result = Providers.LooksGarbled(text);
+        var result = ProviderHub.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -52,7 +53,7 @@ public sealed class ProvidersTests
         const string text = "alpha 123 456";
 
         // Act
-        var result = Providers.LooksGarbled(text);
+        var result = ProviderHub.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -64,7 +65,7 @@ public sealed class ProvidersTests
     [DataRow("Yes, I am ready.")]
     [DataRow("I'm ready to help.")]
     public void LooksGarbled_TerseValidReply_ReturnsFalse(string text) =>
-        Providers.LooksGarbled(text).Should().BeFalse();
+        ProviderHub.LooksGarbled(text).Should().BeFalse();
 
     [TestMethod]
     public void LooksGarbled_VeryShortString_ReturnsFalse()
@@ -73,7 +74,7 @@ public sealed class ProvidersTests
         const string text = "._.";
 
         // Act
-        var result = Providers.LooksGarbled(text);
+        var result = ProviderHub.LooksGarbled(text);
 
         // Assert
         result.Should().BeFalse();
@@ -104,7 +105,7 @@ public sealed class ProvidersTests
             """;
 
         // Act
-        var result = Providers.ParseFoundry(json).ToList();
+        var result = ProviderHub.ParseFoundry(json).ToList();
 
         // Assert
         result.Should().HaveCount(2);
@@ -123,7 +124,7 @@ public sealed class ProvidersTests
         var inputs = new[] { "", "not json", """{ "models": [ }""" };
 
         // Act
-        var result = inputs.Select(json => Providers.ParseFoundry(json).ToList()).ToList();
+        var result = inputs.Select(json => ProviderHub.ParseFoundry(json).ToList()).ToList();
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);
@@ -154,7 +155,7 @@ public sealed class ProvidersTests
             """;
 
         // Act
-        var result = Providers.ParseLmStudio(json).ToList();
+        var result = ProviderHub.ParseLmStudio(json).ToList();
 
         // Assert
         result.Should().Equal("qwen/qwen3-coder", "meta/llama");
@@ -167,7 +168,7 @@ public sealed class ProvidersTests
         var inputs = new[] { "", "not json", """[{ "modelKey": ]""" };
 
         // Act
-        var result = inputs.Select(json => Providers.ParseLmStudio(json).ToList()).ToList();
+        var result = inputs.Select(json => ProviderHub.ParseLmStudio(json).ToList()).ToList();
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);

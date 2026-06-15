@@ -1,4 +1,4 @@
-namespace Copilocal;
+namespace Copilocal.Infrastructure;
 
 internal interface IProcessRunner
 {

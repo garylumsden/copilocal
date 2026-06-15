@@ -1,4 +1,6 @@
 using Copilocal;
+using Copilocal.Launch;
+using Copilocal.Providers;
 using Copilocal.Tests.Fakes;
 using FluentAssertions;
 
@@ -11,7 +13,7 @@ public sealed class PreflightTests
     public void Ok_NoToolCalling_NonInteractive_Blocks()
     {
         // Arrange: a Foundry model whose catalog entry doesn't support tool calling.
-        var providers = new Providers(new FakeProcessRunner(), new FakeHttpGateway());
+        var providers = new ProviderHub(new FakeProcessRunner(), new FakeHttpGateway());
         var item = new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", Model = "deepseek-r1", Tools = false };
 
         // Act / Assert
@@ -24,7 +26,7 @@ public sealed class PreflightTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddGet("http://localhost:1234/api/v1/models", LmStudioModels(maxContext: 4096));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act / Assert
         Preflight.Ok(LmStudioItem("target"), interactive: false, providers).Should().BeFalse();
@@ -36,7 +38,7 @@ public sealed class PreflightTests
         // Arrange
         var http = new FakeHttpGateway();
         http.AddGet("http://localhost:1234/api/v1/models", LmStudioModels(maxContext: 32_768));
-        var providers = new Providers(new FakeProcessRunner(), http);
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act / Assert
         Preflight.Ok(LmStudioItem("target"), interactive: false, providers).Should().BeTrue();
@@ -50,7 +52,7 @@ public sealed class PreflightTests
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info qwen2.5-coder-1.5b -o json",
             stdout: """{"model":{"contextLength":4224}}""");
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
         var item = new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", Model = "qwen npu", LoadAlias = "qwen2.5-coder-1.5b", Tools = true };
 
         // Act / Assert
@@ -64,7 +66,7 @@ public sealed class PreflightTests
         var proc = new FakeProcessRunner();
         proc.WhichResults["foundry"] = @"C:\fake\foundry.exe";
         proc.AddRun(@"C:\fake\foundry.exe", "model info phi4-mini -o json", code: 1);
-        var providers = new Providers(proc, new FakeHttpGateway());
+        var providers = new ProviderHub(proc, new FakeHttpGateway());
         var item = new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", Model = "Phi-4 Mini", LoadAlias = "phi4-mini", Tools = true };
 
         // Act / Assert

@@ -1,12 +1,15 @@
 using Spectre.Console;
 
-namespace Copilocal;
+using Copilocal.Launch;
+using Copilocal.Providers;
+
+namespace Copilocal.Ui;
 
 /// <summary>The "Configure launch options" page: toggles, reasoning effort, token overrides,
 /// and free-form extra args, persisted to ~/.copilocal/config.json.</summary>
 internal static class LaunchOptionsPage
 {
-    internal static void Show(Providers providers)
+    internal static void Show(ProviderHub providers)
     {
         var cfg = LaunchConfig.Load();
         AnsiConsole.WriteLine();

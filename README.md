@@ -14,7 +14,7 @@ links to each tool's docs so you can decide).
 [![release](https://github.com/garylumsden/copilocal/actions/workflows/release.yml/badge.svg)](https://github.com/garylumsden/copilocal/actions/workflows/release.yml)
 [![winget](https://img.shields.io/badge/winget-Gjlumsden.Copilocal-blue)](https://github.com/garylumsden/copilocal/releases)
 [![license: MIT](https://img.shields.io/github/license/garylumsden/copilocal)](LICENSE)
-![platform: Windows x64 · ARM64](https://img.shields.io/badge/platform-Windows%20x64%20%C2%B7%20ARM64-0078D6)
+![platform: Windows · macOS](https://img.shields.io/badge/platform-Windows%20%C2%B7%20macOS-0078D6)
 
 > ⚠️ **Not affiliated with GitHub or Microsoft.** copilocal is an independent,
 > community-built tool. It is **not** affiliated with, endorsed by, or sponsored by
@@ -81,6 +81,22 @@ but that's **one model per session**, set by hand. copilocal turns it into a pic
 - At least one of: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai)
   (copilocal can install these for you on Windows)
 - Windows x64 / ARM64, or macOS arm64 / x64 — a single self-contained binary; no .NET runtime required
+
+### Validated with
+
+copilocal talks to each runtime's CLI/REST surface, which shifts over time. The current
+behaviour is verified against these versions (Windows 11 x64, June 2026):
+
+| Component | Version |
+| --- | --- |
+| Ollama | 0.30.6 |
+| LM Studio | 0.4.16 |
+| Foundry Local (CLI) | 0.10.0 |
+| GitHub Copilot CLI | 1.0.62 |
+| .NET SDK (build) | 10.0.300 |
+
+Newer releases usually work too; if discovery or launch misbehaves after a runtime update,
+please [open an issue](https://github.com/garylumsden/copilocal/issues) noting the version.
 
 ## Install
 

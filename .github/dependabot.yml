@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # .NET NuGet packages (copilocal app + test project).
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      nuget-dependencies:
+        patterns:
+          - "*"
+
+  # GitHub Actions pinned in the release workflow.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

@@ -193,10 +193,48 @@ public sealed class LaunchConfigTests
     }
 
     [TestMethod]
+    public void Load_LiteLlmWhitespaceEnvVarAndInvalidMode_FallsBackToDefaults()
+    {
+        string path = Path.Join(Path.GetTempPath(), $"copilocal-litellm-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path,
+            """
+            {
+              "liteLlmBaseUrl": " https://proxy.example.com/base/ ",
+              "liteLlmApiKeyEnvVar": "   ",
+              "liteLlmRuntimeMode": "PYTHON"
+            }
+            """);
+
+        try
+        {
+            var loaded = LaunchConfig.Load(path);
+
+            loaded.LiteLlmBaseUrl.Should().Be("https://proxy.example.com/base/v1");
+            loaded.LiteLlmApiKeyEnvVar.Should().Be(LaunchConfig.DefaultLiteLlmApiKeyEnvVar);
+            loaded.LiteLlmRuntimeMode.Should().Be("docker");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [TestMethod]
     [DataRow("", "http://localhost:4000/v1")]
+    [DataRow("   ", "http://localhost:4000/v1")]
     [DataRow("http://localhost:4000", "http://localhost:4000/v1")]
     [DataRow("http://localhost:4000/v1", "http://localhost:4000/v1")]
+    [DataRow("  http://localhost:4000/v1/  ", "http://localhost:4000/v1")]
     [DataRow("https://proxy.example.com/base", "https://proxy.example.com/base/v1")]
     public void NormalizeBaseUrl_NormalizesExpectedShape(string input, string expected) =>
         LaunchConfig.NormalizeBaseUrl(input).Should().Be(expected);
+
+    [TestMethod]
+    [DataRow("", "")]
+    [DataRow("   ", "")]
+    [DataRow("sk-test", "sk-test")]
+    [DataRow("Sk-Test", "Sk-Test")]
+    [DataRow("test-key", "sk-test-key")]
+    public void NormalizeLiteLlmApiKey_NormalizesExpectedShape(string input, string expected) =>
+        LaunchConfig.NormalizeLiteLlmApiKey(input).Should().Be(expected);
 }

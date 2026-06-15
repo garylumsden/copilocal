@@ -34,10 +34,10 @@ links to each tool's docs so you can decide).
 ```text
 (startup animation: icon flies in left→right, reveals the wordmark, then settles on the right)
 
- ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗  ██████╗ █████╗ ██╗       ╭─════════════─╮
-██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗██╔════╝██╔══██╗██║       │  ┄┄┄┄┄┄┄┄┄┄  ├─●
-██║     ██║   ██║██████╔╝██║██║     ██║   ██║██║     ███████║██║     ●─┤   >_         │
-██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║██║     ██╔══██║██║       │  ┄┄┄┄┄┄┄┄┄┄  ├─●
+ ██████╗ ██████╗ ██████╗ ██╗██╗      ██████╗  ██████╗ █████╗ ██╗        ╭─════════════─╮
+██╔════╝██╔═══██╗██╔══██╗██║██║     ██╔═══██╗██╔════╝██╔══██╗██║        │  ┄┄┄┄┄┄┄┄┄┄  ├─●
+██║     ██║   ██║██████╔╝██║██║     ██║   ██║██║     ███████║██║      ●─┤   >_         │
+██║     ██║   ██║██╔═══╝ ██║██║     ██║   ██║██║     ██╔══██║██║        │  ┄┄┄┄┄┄┄┄┄┄  ├─●
 ╚██████╗╚██████╔╝██║     ██║███████╗╚██████╔╝╚██████╗██║  ██║███████╗   ╰─════════════─╯
  ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝╚══════╝
       Pick a local model · launch GitHub Copilot CLI against it
@@ -81,6 +81,8 @@ copilocal
 
 No local runtime installed yet? Run `copilocal` and choose **⚙ Install / manage providers**
 to install local runtimes (Ollama / Foundry Local / LM Studio), or enable LiteLLM.
+When setting up LiteLLM, copilocal can import all currently discovered local-provider
+models into the LiteLLM config in one step.
 
 Pick a model with **↑/↓** and **Enter**. copilocal starts the provider if needed, warms
 the model up, sets the BYOK env vars, and launches `copilot` against it. When Copilot
@@ -310,8 +312,52 @@ providers** opens a checkbox list (space to toggle) with a docs link for each:
 - **LM Studio** — winget (`ElementLabs.LMStudio`)
 - **Foundry Local** — latest CLI MSIX from [microsoft/Foundry-Local](https://github.com/microsoft/Foundry-Local) releases (matches your CPU architecture)
 - **LiteLLM** — choose runtime mode in UI:
+  - setup mode can either **install local LiteLLM runtime** or **skip install and configure an existing LiteLLM instance**
+  - if local install fails, copilocal shows the failure reason and can immediately switch to existing-instance setup
+  - start failures now include the concrete reason (e.g., missing Docker or missing LiteLLM key)
+  - start now waits until LiteLLM is actually reachable (`/v1/models`) before reporting success
+  - if LiteLLM is enabled on a local endpoint and discovery can't resolve it at startup, copilocal attempts one automatic LiteLLM start, then re-discovers models
   - **docker**: scaffolds a compose stack (LiteLLM + DB + UI) and manages start/stop/status
   - **python**: installs `litellm[proxy]` (uv/pip path), uses a local SQLite-backed config, and manages start/stop/status
+  - after a successful LiteLLM start, copilocal prints the login key + endpoint + clickable UI link so you can sign in and manage models/config
+  - you can print the clickable UI link any time via **Manage LiteLLM runtime → Show runtime status**
+  - key hint: keys are normalized to `sk-...` format; docker UI login uses `admin` + the same LiteLLM key
+  - setup prompt: optionally add all discovered local-provider models into LiteLLM config
+  - manage action: add any missing local-provider models later (no duplicate entries)
+
+### LiteLLM troubleshooting
+
+- **UI says invalid credentials**  
+  For local docker mode, sign in with:
+  - username: `admin`
+  - password: your LiteLLM key (normalized to `sk-...`)
+  
+  Credentials are written to `~/.copilocal/litellm/.env` as `UI_USERNAME` / `UI_PASSWORD`.
+
+- **Copilot launch gets 401 on LiteLLM model**  
+  Make sure the same LiteLLM key is configured in copilocal (**Set endpoint + auth**).  
+  copilocal now uses that key for:
+  - LiteLLM `/v1/models` discovery
+  - launch auth (`COPILOT_PROVIDER_API_KEY`)
+
+- **Changed key or auth settings?**  
+  Run **Manage LiteLLM runtime → Stop LiteLLM runtime**, then **Start LiteLLM runtime** to rewrite `.env`.
+
+- **LiteLLM can’t call local routed models (500 connection error)**  
+  In docker mode, local provider routes must use container-reachable hostnames.  
+  copilocal now rewrites `api_base` loopback routes (`localhost` / `127.0.0.1`) to
+  `host.docker.internal` on LiteLLM start, and when syncing local models into config.
+
+- **Need a full clean reset?**  
+  Use **Manage LiteLLM runtime → Reset LiteLLM local setup**. This:
+  - runs docker compose down (if present)
+  - removes `~/.copilocal/litellm/`
+  - resets LiteLLM settings in `~/.copilocal/config.json` to defaults (LiteLLM disabled, default base URL/env var, docker mode)
+
+### Where settings are stored
+
+- Global app settings: `~/.copilocal/config.json`
+- LiteLLM local runtime files (compose/config/.env/pid): `~/.copilocal/litellm/`
 
 For Foundry Local, that installer intentionally uses the compatible `cli-preview-*` release
 instead of assuming the `Microsoft.FoundryLocal` winget package has the same CLI surface.

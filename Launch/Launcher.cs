@@ -23,6 +23,8 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
     const int MinAutoOutputTokens = 1_024;    // keep enough completion room for Copilot replies.
     const int MaxAutoOutputTokens = 8_192;    // cap local-model completions at practical size.
     const int PromptTokenReserve = 512;       // reserve overhead for provider framing.
+    const int LiteLlmTransientRetries = 3;    // allow proxy/model boot grace period.
+    const int LiteLlmRetryDelayMs = 700;
 
     /// <summary>Exit code of the most recently launched copilot process (0 if none launched).</summary>
     internal int LastExitCode { get; private set; }
@@ -44,17 +46,35 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
 
         string baseUrl = AnsiConsole.Status().Start("Starting provider...", _ => providers.EnsureServer(m, preload: !opts.DryRun));
         m.BaseUrl = baseUrl;
+        var cfg = LaunchConfig.Load();
+        string apiKey = ResolveProviderApiKey(m, cfg);
+        bool isLiteLlm = string.Equals(m.Provider, "LiteLLM", StringComparison.Ordinal);
+        string? warmupBearer = isLiteLlm ? apiKey : null;
+        if (isLiteLlm && apiKey.Length == 0)
+        {
+            AnsiConsole.MarkupLine(
+                "[red]LiteLLM API key not configured.[/] Set an env var (default [white]LITELLM_MASTER_KEY[/]) " +
+                "or configure a launch-option key in [white]Configure launch options[/].");
+            LastExitCode = 2;
+            return false;
+        }
 
         bool useResponses = false;
 
         // Validate the model actually responds (catches broken GPU EPs that 500 or emit garbage).
         if (!opts.DryRun)
         {
-            var warm = AnsiConsole.Status().Start("Warming up model...", _ => providers.WarmUp(baseUrl, m.Model));
+            var warm = AnsiConsole.Status().Start("Warming up model...", _ => providers.WarmUp(baseUrl, m.Model, warmupBearer));
+            if (isLiteLlm)
+                for (int retry = 0; retry < LiteLlmTransientRetries && IsTransientWarmupFailure(warm); retry++)
+                {
+                    Thread.Sleep(LiteLlmRetryDelayMs);
+                    warm = AnsiConsole.Status().Start("Warming up model...", _ => providers.WarmUp(baseUrl, m.Model, warmupBearer));
+                }
 
             // Reasoning models answer in a 'reasoning' field; the OpenAI Responses wire
             // API handles that cleanly (no empty/null 'content' -> no Ollama 400).
-            if (warm.Reasoning && providers.SupportsResponses(baseUrl))
+            if (warm.Reasoning && providers.SupportsResponses(baseUrl, warmupBearer))
             {
                 useResponses = true;
                 AnsiConsole.MarkupLine("[teal]Reasoning model detected[/] — using the OpenAI [white]Responses[/] wire API [dim](/v1/responses)[/].");
@@ -81,8 +101,14 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
                     // reasoners (e.g. gemma) the trivial warm-up missed: those must use the
                     // Responses wire, or their reasoning burns the chat output budget and
                     // truncates the tool call (finish_reason "length" -> undispatchable).
-                    var tool = AnsiConsole.Status().Start("Checking tool calling...", _ => providers.ProbeToolCalling(baseUrl, m.Model));
-                    if (tool.Reasoning && providers.SupportsResponses(baseUrl))
+                    var tool = AnsiConsole.Status().Start("Checking tool calling...", _ => providers.ProbeToolCalling(baseUrl, m.Model, warmupBearer));
+                    if (isLiteLlm)
+                        for (int retry = 0; retry < LiteLlmTransientRetries && IsTransientProbeFailure(tool); retry++)
+                        {
+                            Thread.Sleep(LiteLlmRetryDelayMs);
+                            tool = AnsiConsole.Status().Start("Checking tool calling...", _ => providers.ProbeToolCalling(baseUrl, m.Model, warmupBearer));
+                        }
+                    if (tool.Reasoning && providers.SupportsResponses(baseUrl, warmupBearer))
                     {
                         useResponses = true;
                         AnsiConsole.MarkupLine("[teal]Reasoning model detected[/] [dim](during tool probe)[/] — using the OpenAI [white]Responses[/] wire API [dim](/v1/responses)[/].");
@@ -97,16 +123,6 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
             }
         }
 
-        var cfg = LaunchConfig.Load();
-        string apiKey = ResolveProviderApiKey(m, cfg);
-        if (apiKey.Length == 0)
-        {
-            AnsiConsole.MarkupLine(
-                "[red]LiteLLM API key not configured.[/] Set an env var (default [white]LITELLM_MASTER_KEY[/]) " +
-                "or configure a launch-option key in [white]Configure launch options[/].");
-            LastExitCode = 2;
-            return false;
-        }
         var env = new Dictionary<string, string>
         {
             ["COPILOT_PROVIDER_BASE_URL"] = baseUrl,
@@ -181,16 +197,35 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
             return "local";
 
         if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKey))
-            return cfg.LiteLlmApiKey.Trim();
+            return LaunchConfig.NormalizeLiteLlmApiKey(cfg.LiteLlmApiKey);
 
         if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKeyEnvVar))
         {
             string fromNamed = Environment.GetEnvironmentVariable(cfg.LiteLlmApiKeyEnvVar.Trim()) ?? "";
             if (!string.IsNullOrWhiteSpace(fromNamed))
-                return fromNamed.Trim();
+                return LaunchConfig.NormalizeLiteLlmApiKey(fromNamed);
         }
 
         string fallback = Environment.GetEnvironmentVariable(LaunchConfig.DefaultLiteLlmApiKeyEnvVar) ?? "";
-        return fallback.Trim();
+        return LaunchConfig.NormalizeLiteLlmApiKey(fallback);
+    }
+
+    static bool IsTransientWarmupFailure((ProviderHub.WarmStatus Status, string Detail, bool Reasoning) warm) =>
+        warm.Status == ProviderHub.WarmStatus.Failed && IsTransientHttpOrNetwork(warm.Detail);
+
+    static bool IsTransientProbeFailure((ProviderHub.ToolStatus Status, string Detail, bool Reasoning) probe) =>
+        probe.Status == ProviderHub.ToolStatus.Inconclusive && IsTransientHttpOrNetwork(probe.Detail);
+
+    static bool IsTransientHttpOrNetwork(string detail)
+    {
+        if (string.IsNullOrWhiteSpace(detail)) return false;
+        string d = detail.ToLowerInvariant();
+        return d.StartsWith("http 5", StringComparison.Ordinal)
+            || d.StartsWith("http 429", StringComparison.Ordinal)
+            || d.Contains("connection refused", StringComparison.Ordinal)
+            || d.Contains("actively refused", StringComparison.Ordinal)
+            || d.Contains("timed out", StringComparison.Ordinal)
+            || d.Contains("timeout", StringComparison.Ordinal)
+            || d.Contains("temporarily unavailable", StringComparison.Ordinal);
     }
 }

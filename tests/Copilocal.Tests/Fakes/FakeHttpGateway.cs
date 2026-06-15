@@ -31,9 +31,9 @@ internal sealed class FakeHttpGateway : IHttpGateway
     internal void AddDownloadContent(string url, string content) =>
         _downloadContents[url] = content;
 
-    public (bool Ok, int Status, string Body) PostJson(string url, string json, int timeoutMs)
+    public (bool Ok, int Status, string Body) PostJson(string url, string json, int timeoutMs, string? bearerToken = null)
     {
-        PostCalls.Add(new PostCall(url, json, timeoutMs));
+        PostCalls.Add(new PostCall(url, json, timeoutMs, bearerToken));
         var response = Dequeue(_postResponses, url);
 
         return response switch
@@ -45,9 +45,9 @@ internal sealed class FakeHttpGateway : IHttpGateway
         };
     }
 
-    public string GetString(string url, int timeoutMs)
+    public string GetString(string url, int timeoutMs, string? bearerToken = null)
     {
-        GetCalls.Add(new GetCall(url, timeoutMs));
+        GetCalls.Add(new GetCall(url, timeoutMs, bearerToken));
         var response = Dequeue(_getResponses, url);
 
         return response switch
@@ -86,9 +86,9 @@ internal sealed class FakeHttpGateway : IHttpGateway
 
     private sealed record PostResponse(bool Ok, int Status, string Body);
 
-    internal sealed record PostCall(string Url, string Json, int TimeoutMs);
+    internal sealed record PostCall(string Url, string Json, int TimeoutMs, string? BearerToken);
 
-    internal sealed record GetCall(string Url, int TimeoutMs);
+    internal sealed record GetCall(string Url, int TimeoutMs, string? BearerToken);
 
     internal sealed record DownloadCall(string Url, string Path, int TimeoutMs);
 }

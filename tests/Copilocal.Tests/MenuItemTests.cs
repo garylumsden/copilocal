@@ -115,4 +115,46 @@ public sealed class MenuItemTests
         // Assert
         result.Should().Be("[dim]LM Studio[/] qwen[[tools]]/model]]");
     }
+
+    [TestMethod]
+    public void Display_LiteLlmModel_PrefixesWithPlatformName()
+    {
+        var item = new MenuItem
+        {
+            Kind = MenuItemKind.Model,
+            Provider = "LiteLLM",
+            Model = "ollama/qwen2.5-coder:7b",
+            Tools = true,
+        };
+
+        item.Display.Should().Be("[dim]LiteLLM  [/] [[Ollama]] qwen2.5-coder:7b");
+    }
+
+    [TestMethod]
+    public void Display_LiteLlmModel_FoundryPrefix_UsesFoundryLocalLabel()
+    {
+        var item = new MenuItem
+        {
+            Kind = MenuItemKind.Model,
+            Provider = "LiteLLM",
+            Model = "foundry/qwen2.5-coder-7b-instruct-openvino-npu",
+            Tools = true,
+        };
+
+        item.Display.Should().Be("[dim]LiteLLM  [/] [[Foundry Local]] qwen2.5-coder-7b-instruct-openvino-npu");
+    }
+
+    [TestMethod]
+    public void Display_LiteLlmModel_LmStudioPrefix_UsesLmStudioLabel()
+    {
+        var item = new MenuItem
+        {
+            Kind = MenuItemKind.Model,
+            Provider = "LiteLLM",
+            Model = "lmstudio/qwen2.5-coder-7b-instruct",
+            Tools = true,
+        };
+
+        item.Display.Should().Be("[dim]LiteLLM  [/] [[LM Studio]] qwen2.5-coder-7b-instruct");
+    }
 }

@@ -38,6 +38,7 @@ internal static class Program
 
         bool resuming = false;
         MenuItem? lastLaunched = null;   // to unload when switching models on continue
+        bool liteLlmAutoStartAttempted = false;
 
         while (true)
         {
@@ -55,6 +56,22 @@ internal static class Program
                         ? $"  [green]✓[/] {Markup.Escape(name)} [grey58]— {count} model{(count == 1 ? "" : "s")}[/]"
                         : $"  [grey46]·[/] {Markup.Escape(name)} [grey58]— no models[/]"));
             AnsiConsole.WriteLine();
+
+            if (cli.Interactive
+                && ShouldAutoStartLiteLlm(launchCfg, models, installer)
+                && !liteLlmAutoStartAttempted)
+            {
+                liteLlmAutoStartAttempted = true;
+                var start = AnsiConsole.Status().Start("LiteLLM enabled but unreachable; starting runtime...", _ =>
+                    installer.StartLiteLlmWithDetail(launchCfg));
+                if (start.Ok)
+                {
+                    AnsiConsole.MarkupLine("[green]✓[/] LiteLLM auto-started.");
+                    continue;   // re-discover models immediately
+                }
+                AnsiConsole.MarkupLine($"[yellow]·[/] LiteLLM auto-start failed: [dim]{Markup.Escape(start.Detail)}[/]");
+            }
+
             var missing = MissingProviders(providers, launchCfg, includeLocalProviders);
             var emptyInstalled = EmptyInstalledProviders(models, providers, launchCfg, includeLocalProviders);
 
@@ -119,10 +136,10 @@ internal static class Program
                         LaunchOptionsPage.Show(providers);
                         break;
                     case ControlAction.ManageLiteLlm:
-                        InstallFlow.ManageLiteLlm(installer);
+                        InstallFlow.ManageLiteLlm(installer, providers);
                         break;
                     case ControlAction.Install:
-                        InstallFlow.Run(missing, installer);
+                        InstallFlow.Run(missing, installer, providers);
                         break;
                 }
                 continue;
@@ -142,8 +159,15 @@ internal static class Program
 
             bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
 
-            // dry-run, declined warm-up, or a user-managed session => we're done.
-            if (cli.DryRun || !launched || sessionId is null) return 0;
+            // Dry-run ends immediately. If launch was declined/failed in interactive mode,
+            // return to the picker so the user can choose another model.
+            if (cli.DryRun) return 0;
+            if (!launched)
+            {
+                if (cli.Interactive) continue;
+                return 0;
+            }
+            if (sessionId is null) return 0;
 
             // Copilot exited: surface the captured resume id/name, then loop back to
             // the model picker so the user can continue with a different model (or Exit).
@@ -258,5 +282,20 @@ internal static class Program
         }
         if (cfg.LiteLlmEnabled && !have.Contains("LiteLLM")) list.Add(ProviderInfo.LiteLlm);
         return list;
+    }
+
+    static bool ShouldAutoStartLiteLlm(LaunchConfig cfg, IReadOnlyList<MenuItem> models, ProviderInstaller installer)
+    {
+        if (!cfg.LiteLlmEnabled) return false;
+        if (models.Any(m => string.Equals(m.Provider, "LiteLLM", StringComparison.Ordinal))) return false;
+        if (!IsLoopbackLiteLlmEndpoint(cfg.LiteLlmBaseUrl)) return false;
+        return !installer.LiteLlmStatus(cfg).Running;
+    }
+
+    static bool IsLoopbackLiteLlmEndpoint(string baseUrl)
+    {
+        string normalized = LaunchConfig.NormalizeBaseUrl(baseUrl);
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri)) return false;
+        return uri.IsLoopback;
     }
 }

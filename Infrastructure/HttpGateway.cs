@@ -18,19 +18,27 @@ internal sealed class HttpGateway : IHttpGateway
         return c;
     }
 
-    public (bool Ok, int Status, string Body) PostJson(string url, string json, int timeoutMs)
+    public (bool Ok, int Status, string Body) PostJson(string url, string json, int timeoutMs, string? bearerToken = null)
     {
         using var cts = new CancellationTokenSource(timeoutMs);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        using var resp = Http.PostAsync(url, content, cts.Token).GetAwaiter().GetResult();
+        using var req = new HttpRequestMessage(HttpMethod.Post, url);
+        if (!string.IsNullOrWhiteSpace(bearerToken))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken.Trim());
+        req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var resp = Http.Send(req, cts.Token);
         string body = resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
         return (resp.IsSuccessStatusCode, (int)resp.StatusCode, body);
     }
 
-    public string GetString(string url, int timeoutMs)
+    public string GetString(string url, int timeoutMs, string? bearerToken = null)
     {
         using var cts = new CancellationTokenSource(timeoutMs);
-        return Http.GetStringAsync(url, cts.Token).GetAwaiter().GetResult();
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrWhiteSpace(bearerToken))
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken.Trim());
+        using var resp = Http.Send(req, cts.Token);
+        resp.EnsureSuccessStatusCode();
+        return resp.Content.ReadAsStringAsync(cts.Token).GetAwaiter().GetResult();
     }
 
     public void DownloadToFile(string url, string path, int timeoutMs)

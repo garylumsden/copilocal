@@ -73,13 +73,20 @@ internal static class LaunchOptionsPage
                     .DefaultValue(cfg.LiteLlmApiKeyEnvVar)
                     .ShowDefaultValue(true));
             cfg.LiteLlmApiKeyEnvVar = string.IsNullOrWhiteSpace(envVar) ? LaunchConfig.DefaultLiteLlmApiKeyEnvVar : envVar.Trim();
+            AnsiConsole.MarkupLine(
+                "[dim]Hint:[/] Local LiteLLM accepts any non-empty secret (normalized to [white]sk-...[/]); external LiteLLM must use its configured proxy key.");
 
             string apiKey = AnsiConsole.Prompt(
-                new TextPrompt<string>("LiteLLM API key [dim](optional plain-text fallback; leave blank to use env var only)[/]:")
-                    .AllowEmpty()
+                new TextPrompt<string>("LiteLLM API key [dim](required)[/]:")
                     .DefaultValue(cfg.LiteLlmApiKey)
-                    .ShowDefaultValue(cfg.LiteLlmApiKey.Length > 0));
-            cfg.LiteLlmApiKey = (apiKey ?? "").Trim();
+                    .ShowDefaultValue(cfg.LiteLlmApiKey.Length > 0)
+                    .Validate(v => string.IsNullOrWhiteSpace(v)
+                        ? ValidationResult.Error("[red]LiteLLM API key is required.[/]")
+                        : ValidationResult.Success()));
+            string enteredKey = (apiKey ?? "").Trim();
+            cfg.LiteLlmApiKey = LaunchConfig.NormalizeLiteLlmApiKey(enteredKey);
+            if (enteredKey.Length > 0 && !enteredKey.StartsWith("sk-", StringComparison.OrdinalIgnoreCase))
+                AnsiConsole.MarkupLine("[dim]Hint:[/] LiteLLM keys are normalized to [white]sk-...[/].");
 
             cfg.LiteLlmRuntimeMode = AnsiConsole.Prompt(
                 new SelectionPrompt<string>()
@@ -119,4 +126,5 @@ internal static class LaunchOptionsPage
                     : ValidationResult.Error("[red]Enter a non-negative number (or leave blank)[/]")));
         return int.TryParse(s, out var val) && val > 0 ? val : 0;
     }
+
 }

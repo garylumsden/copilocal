@@ -90,7 +90,7 @@ internal sealed class LaunchConfig
             c.LiteLlmEnabled = GetBool(r, "liteLlmEnabled");
             c.HideLocalProvidersWhenLiteLlm = GetBool(r, "hideLocalProvidersWhenLiteLlm");
             c.LiteLlmBaseUrl = NormalizeBaseUrl(GetStr(r, "liteLlmBaseUrl"));
-            c.LiteLlmApiKey = GetStr(r, "liteLlmApiKey");
+            c.LiteLlmApiKey = NormalizeLiteLlmApiKey(GetStr(r, "liteLlmApiKey"));
             c.LiteLlmApiKeyEnvVar = GetStr(r, "liteLlmApiKeyEnvVar");
             c.LiteLlmRuntimeMode = GetStr(r, "liteLlmRuntimeMode");
             if (string.IsNullOrWhiteSpace(c.LiteLlmApiKeyEnvVar))
@@ -141,7 +141,7 @@ internal sealed class LaunchConfig
             w.WriteBoolean("liteLlmEnabled", LiteLlmEnabled);
             w.WriteBoolean("hideLocalProvidersWhenLiteLlm", HideLocalProvidersWhenLiteLlm);
             w.WriteString("liteLlmBaseUrl", NormalizeBaseUrl(LiteLlmBaseUrl));
-            w.WriteString("liteLlmApiKey", LiteLlmApiKey);
+            w.WriteString("liteLlmApiKey", NormalizeLiteLlmApiKey(LiteLlmApiKey));
             w.WriteString("liteLlmApiKeyEnvVar", LiteLlmApiKeyEnvVar);
             w.WriteString("liteLlmRuntimeMode", LiteLlmRuntimeMode);
             w.WriteEndObject();
@@ -191,6 +191,15 @@ internal sealed class LaunchConfig
         if (trimmed.Length == 0) return DefaultLiteLlmBaseUrl;
         string noSlash = trimmed.TrimEnd('/');
         return noSlash.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ? noSlash : $"{noSlash}/v1";
+    }
+
+    internal static string NormalizeLiteLlmApiKey(string raw)
+    {
+        string trimmed = (raw ?? "").Trim();
+        if (trimmed.Length == 0) return "";
+        return trimmed.StartsWith("sk-", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"sk-{trimmed}";
     }
 
     /// <summary>Split a raw argument string on whitespace, honoring double quotes.</summary>

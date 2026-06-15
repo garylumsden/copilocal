@@ -193,4 +193,33 @@ public sealed class ProviderHubTests
         ProviderHub.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
             .ToList().Should().Equal("a");
     }
+
+    [TestMethod]
+    public void ParseLiteLlmModels_ValidJson_ReturnsDistinctIds()
+    {
+        const string json = """
+            {
+              "object": "list",
+              "data": [
+                { "id": "gpt-4o", "object": "model" },
+                { "id": "qwen2.5-coder:7b", "object": "model" },
+                { "id": "gpt-4o", "object": "model" },
+                { "object": "model" }
+              ]
+            }
+            """;
+
+        ProviderHub.ParseLiteLlmModels(json)
+            .ToList()
+            .Should()
+            .Equal("gpt-4o", "qwen2.5-coder:7b");
+    }
+
+    [TestMethod]
+    public void ParseLiteLlmModels_WrongShapeOrMalformed_ReturnsEmpty()
+    {
+        ProviderHub.ParseLiteLlmModels("""{"data":"oops"}""").Should().BeEmpty();
+        ProviderHub.ParseLiteLlmModels("""{"x":1}""").Should().BeEmpty();
+        ProviderHub.ParseLiteLlmModels("{ not json").Should().BeEmpty();
+    }
 }

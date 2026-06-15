@@ -98,12 +98,21 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
         }
 
         var cfg = LaunchConfig.Load();
+        string apiKey = ResolveProviderApiKey(m, cfg);
+        if (apiKey.Length == 0)
+        {
+            AnsiConsole.MarkupLine(
+                "[red]LiteLLM API key not configured.[/] Set an env var (default [white]LITELLM_MASTER_KEY[/]) " +
+                "or configure a launch-option key in [white]Configure launch options[/].");
+            LastExitCode = 2;
+            return false;
+        }
         var env = new Dictionary<string, string>
         {
             ["COPILOT_PROVIDER_BASE_URL"] = baseUrl,
             ["COPILOT_PROVIDER_TYPE"] = "openai",
             ["COPILOT_MODEL"] = m.Model,
-            ["COPILOT_PROVIDER_API_KEY"] = "local",
+            ["COPILOT_PROVIDER_API_KEY"] = apiKey,
         };
         if (useResponses) env["COPILOT_PROVIDER_WIRE_API"] = "responses";
         if (offline) env["COPILOT_OFFLINE"] = "true";
@@ -164,5 +173,24 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
             ? cfg.MaxPromptTokens
             : (ctx > 0 ? Math.Max(PromptTokenReserve, ctx - output - PromptTokenReserve) : 0);
         return (prompt, output);
+    }
+
+    static string ResolveProviderApiKey(MenuItem m, LaunchConfig cfg)
+    {
+        if (!string.Equals(m.Provider, "LiteLLM", StringComparison.Ordinal))
+            return "local";
+
+        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKey))
+            return cfg.LiteLlmApiKey.Trim();
+
+        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKeyEnvVar))
+        {
+            string fromNamed = Environment.GetEnvironmentVariable(cfg.LiteLlmApiKeyEnvVar.Trim()) ?? "";
+            if (!string.IsNullOrWhiteSpace(fromNamed))
+                return fromNamed.Trim();
+        }
+
+        string fallback = Environment.GetEnvironmentVariable(LaunchConfig.DefaultLiteLlmApiKeyEnvVar) ?? "";
+        return fallback.Trim();
     }
 }

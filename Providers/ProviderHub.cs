@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using Copilocal.Infrastructure;
+using Copilocal.Launch;
 
 namespace Copilocal.Providers;
 
@@ -16,6 +17,30 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         {
             if (!_ollamaSet) { _ollama = proc.Which("ollama") ?? Path.Join(LocalAppData, "Programs", "Ollama", "ollama.exe"); _ollamaSet = true; }
             return _ollama!;
+        }
+    }
+
+    internal static IEnumerable<string> ParseLiteLlmModels(string json)
+    {
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); }
+        catch (JsonException) { yield break; }
+        using (doc)
+        {
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("data", out var data)
+                || data.ValueKind != JsonValueKind.Array) yield break;
+
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var item in data.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("id", out var idEl)
+                    || idEl.ValueKind != JsonValueKind.String) continue;
+                string id = idEl.GetString() ?? "";
+                if (id.Length == 0 || !seen.Add(id)) continue;
+                yield return id;
+            }
         }
     }
 
@@ -60,14 +85,22 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     // we render with whoever responded and mark stragglers (they'll be warm next run).
     const int DiscoverBudgetMs = 8000;
 
-    internal List<MenuItem> GatherModels(Action<string, int>? onProvider = null)
+    internal List<MenuItem> GatherModels(
+        bool includeLocalProviders = true,
+        bool includeLiteLlm = false,
+        Action<string, int>? onProvider = null)
     {
         // Query only installed providers, in parallel; report each provider's result
         // as it lands so the UI can log progress instead of looking like a hang.
         var pending = new List<(string Name, Task<List<MenuItem>> Task)>();
-        if (HasOllama) pending.Add(("Ollama", Task.Run(GatherOllama)));
-        if (HasFoundry) pending.Add(("Foundry Local", Task.Run(GatherFoundry)));
-        if (HasLmStudio) pending.Add(("LM Studio", Task.Run(GatherLmStudio)));
+        if (includeLocalProviders)
+        {
+            if (HasOllama) pending.Add(("Ollama", Task.Run(GatherOllama)));
+            if (HasFoundry) pending.Add(("Foundry Local", Task.Run(GatherFoundry)));
+            if (HasLmStudio) pending.Add(("LM Studio", Task.Run(GatherLmStudio)));
+        }
+        if (includeLiteLlm)
+            pending.Add(("LiteLLM", Task.Run(GatherLiteLlm)));
 
         var items = new List<MenuItem>();
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -135,6 +168,8 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 return LmStudioContextLength(m.Model, m.BaseUrl);
             case "Foundry":
                 return FoundryContextLength(m);
+            case "LiteLLM":
+                return 0;
             default:
                 return 0;   // unknown
         }
@@ -338,6 +373,25 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         return items;
     }
 
+    List<MenuItem> GatherLiteLlm()
+    {
+        var items = new List<MenuItem>();
+        var cfg = LaunchConfig.Load();
+        if (!cfg.LiteLlmEnabled) return items;
+        string baseUrl = LaunchConfig.NormalizeBaseUrl(cfg.LiteLlmBaseUrl);
+        try
+        {
+            string body = http.GetString($"{baseUrl}/models", DiscoverTimeoutMs);
+            foreach (var id in ParseLiteLlmModels(body))
+                items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "LiteLLM", BaseUrl = baseUrl, Model = id, Tools = true });
+            return items;
+        }
+        catch (HttpRequestException) { return items; }
+        catch (JsonException) { return items; }
+        catch (OperationCanceledException) { return items; }
+        catch (InvalidOperationException) { return items; }
+    }
+
     internal static IEnumerable<(string Id, string LoadId, bool Tools)> ParseFoundry(string json)
     {
         var s = json.IndexOf('{'); var e = json.LastIndexOf('}');
@@ -428,6 +482,9 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                 proc.Run(LmsExe, "server start", 60000);
                 return m.BaseUrl ?? "http://localhost:1234/v1";
 
+            case "LiteLLM":
+                return LaunchConfig.NormalizeBaseUrl(m.BaseUrl ?? LaunchConfig.DefaultLiteLlmBaseUrl);
+
             default: // Ollama autostarts its server
                 return m.BaseUrl ?? "http://localhost:11434/v1";
         }
@@ -441,6 +498,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         {
             case "Foundry": proc.Run(FoundryExe, $"model unload {m.LoadAlias ?? m.Model}", 60000); break;
             case "LM Studio": proc.Run(LmsExe, $"unload {m.Model}", 30000); break;
+            case "LiteLLM": break;
             default: proc.Run(OllamaExe, $"stop {m.Model}", 30000); break;   // Ollama
         }
     }

@@ -113,6 +113,12 @@ public sealed class LaunchConfigTests
             MaxOutputTokens = 1024,
             // A value containing a quote and control char exercises correct JSON escaping.
             ExtraArgs = "--name \"a\tb\"",
+            LiteLlmEnabled = true,
+            HideLocalProvidersWhenLiteLlm = true,
+            LiteLlmBaseUrl = "http://localhost:4000",
+            LiteLlmApiKey = "sk-test",
+            LiteLlmApiKeyEnvVar = "MY_LITELLM_KEY",
+            LiteLlmRuntimeMode = "python",
         };
 
         try
@@ -127,6 +133,12 @@ public sealed class LaunchConfigTests
             loaded.MaxPromptTokens.Should().Be(4096);
             loaded.MaxOutputTokens.Should().Be(1024);
             loaded.ExtraArgs.Should().Be("--name \"a\tb\"");
+            loaded.LiteLlmEnabled.Should().BeTrue();
+            loaded.HideLocalProvidersWhenLiteLlm.Should().BeTrue();
+            loaded.LiteLlmBaseUrl.Should().Be("http://localhost:4000/v1");
+            loaded.LiteLlmApiKey.Should().Be("sk-test");
+            loaded.LiteLlmApiKeyEnvVar.Should().Be("MY_LITELLM_KEY");
+            loaded.LiteLlmRuntimeMode.Should().Be("python");
         }
         finally
         {
@@ -172,5 +184,19 @@ public sealed class LaunchConfigTests
         loaded.MaxPromptTokens.Should().Be(0);
         loaded.MaxOutputTokens.Should().Be(0);
         loaded.ExtraArgs.Should().BeEmpty();
+        loaded.LiteLlmEnabled.Should().BeFalse();
+        loaded.HideLocalProvidersWhenLiteLlm.Should().BeFalse();
+        loaded.LiteLlmBaseUrl.Should().Be(LaunchConfig.DefaultLiteLlmBaseUrl);
+        loaded.LiteLlmApiKey.Should().BeEmpty();
+        loaded.LiteLlmApiKeyEnvVar.Should().Be(LaunchConfig.DefaultLiteLlmApiKeyEnvVar);
+        loaded.LiteLlmRuntimeMode.Should().Be("docker");
     }
+
+    [TestMethod]
+    [DataRow("", "http://localhost:4000/v1")]
+    [DataRow("http://localhost:4000", "http://localhost:4000/v1")]
+    [DataRow("http://localhost:4000/v1", "http://localhost:4000/v1")]
+    [DataRow("https://proxy.example.com/base", "https://proxy.example.com/base/v1")]
+    public void NormalizeBaseUrl_NormalizesExpectedShape(string input, string expected) =>
+        LaunchConfig.NormalizeBaseUrl(input).Should().Be(expected);
 }

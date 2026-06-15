@@ -2,8 +2,8 @@
 
 Pick a **local LLM** from an arrow-key terminal menu and launch **GitHub Copilot CLI** against it.
 
-`copilocal` discovers the models you already have in **Ollama**, **Foundry Local**, and
-**LM Studio**, lets you choose one in an arrow-key menu, makes sure that provider's
+`copilocal` discovers the models you already have in **Ollama**, **Foundry Local**,
+**LM Studio**, and **LiteLLM**, lets you choose one in an arrow-key menu, makes sure that provider's
 OpenAI-compatible server is running, then starts `copilot` with the right BYOK
 environment variables — **set only on the Copilot child process**, never persisted to
 your shell.
@@ -79,8 +79,8 @@ setx OLLAMA_CONTEXT_LENGTH 131072         # then restart Ollama
 copilocal
 ```
 
-No local runtime installed yet? On **Windows**, just run `copilocal` and choose
-**⚙ Install / manage providers** to install Ollama / Foundry Local / LM Studio during startup.
+No local runtime installed yet? Run `copilocal` and choose **⚙ Install / manage providers**
+to install local runtimes (Ollama / Foundry Local / LM Studio), or enable LiteLLM.
 
 Pick a model with **↑/↓** and **Enter**. copilocal starts the provider if needed, warms
 the model up, sets the BYOK env vars, and launches `copilot` against it. When Copilot
@@ -97,8 +97,8 @@ but that's **one model per session**, set by hand. copilocal turns it into a pic
 - **GitHub Copilot CLI** (`copilot` on `PATH`) — https://github.com/github/copilot-cli
   (on Windows copilocal can install it for you at startup via winget; on macOS install it
   yourself, e.g. with Homebrew)
-- At least one of: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai)
-  (copilocal can install these for you on Windows)
+- At least one provider path: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai), or [LiteLLM](https://docs.litellm.ai/docs/proxy/docker_quick_start)
+  (copilocal can install/manage local runtimes and LiteLLM runtime flows from the UI)
   - **Foundry Local note:** copilocal expects the newer preview CLI surface (0.10+:
     `foundry cache list -o json`, `foundry server ...`). If `winget install
     Microsoft.FoundryLocal` gives you an older 0.8.x service-based CLI, use copilocal's
@@ -168,11 +168,12 @@ copilocal --dry-run            # show what it would set, don't launch
 
 ### How models are discovered
 
-| Provider      | Discovery command          | Endpoint                       |
-| ------------- | -------------------------- | ------------------------------ |
-| Ollama        | `ollama list`              | `http://localhost:11434/v1`    |
-| Foundry Local | `foundry cache list -o json` | `http://127.0.0.1:<port>/v1` (resolved at runtime) |
-| LM Studio     | `lms ls --json`            | `http://localhost:1234/v1`     |
+| Provider      | Discovery command / source        | Endpoint                       |
+| ------------- | --------------------------------- | ------------------------------ |
+| Ollama        | `ollama list`                     | `http://localhost:11434/v1`    |
+| Foundry Local | `foundry cache list -o json`      | `http://127.0.0.1:<port>/v1` (resolved at runtime) |
+| LM Studio     | `lms ls --json`                   | `http://localhost:1234/v1`     |
+| LiteLLM       | `GET /v1/models`                  | configurable (default `http://localhost:4000/v1`) |
 
 copilocal sets these on the **child** `copilot` process only:
 
@@ -181,7 +182,7 @@ copilocal sets these on the **child** `copilot` process only:
 | `COPILOT_PROVIDER_BASE_URL` | the chosen provider's OpenAI base URL |
 | `COPILOT_PROVIDER_TYPE` | `openai` |
 | `COPILOT_MODEL` | the chosen model id |
-| `COPILOT_PROVIDER_API_KEY` | `local` (placeholder; local servers ignore it) |
+| `COPILOT_PROVIDER_API_KEY` | `local` for local runtimes; LiteLLM uses your configured key/env var |
 | `COPILOT_PROVIDER_WIRE_API` | `responses` when a reasoning model needs the Responses API |
 | `COPILOT_OFFLINE` | `true` in air-gapped mode |
 | `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` | auto-derived from model context, or your launch-options override |
@@ -308,6 +309,9 @@ providers** opens a checkbox list (space to toggle) with a docs link for each:
 - **Ollama** — winget (`Ollama.Ollama`)
 - **LM Studio** — winget (`ElementLabs.LMStudio`)
 - **Foundry Local** — latest CLI MSIX from [microsoft/Foundry-Local](https://github.com/microsoft/Foundry-Local) releases (matches your CPU architecture)
+- **LiteLLM** — choose runtime mode in UI:
+  - **docker**: scaffolds a compose stack (LiteLLM + DB + UI) and manages start/stop/status
+  - **python**: installs `litellm[proxy]` (uv/pip path), uses a local SQLite-backed config, and manages start/stop/status
 
 For Foundry Local, that installer intentionally uses the compatible `cli-preview-*` release
 instead of assuming the `Microsoft.FoundryLocal` winget package has the same CLI surface.

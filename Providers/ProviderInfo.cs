@@ -44,7 +44,18 @@ internal sealed class ProviderInfo
         ModelsDocsUrl = "https://lmstudio.ai/models",
     };
 
-    internal static readonly ProviderInfo[] All = [Ollama, Foundry, LmStudio];
+    internal static readonly ProviderInfo LiteLlm = new()
+    {
+        Name = "LiteLLM",
+        Key = "LiteLLM",
+        Blurb = "OpenAI-compatible proxy/router for many cloud and local model providers.",
+        DocsUrl = "https://docs.litellm.ai/docs/proxy/docker_quick_start",
+        InstallHow = "docker compose / uv (cross-platform)",
+        PullCmd = "litellm --setup",
+        ModelsDocsUrl = "https://docs.litellm.ai/docs/providers",
+    };
+
+    internal static readonly ProviderInfo[] All = [Ollama, Foundry, LmStudio, LiteLlm];
 
     internal static ProviderInfo ByKey(string key) => All.First(p => p.Key == key);
 }

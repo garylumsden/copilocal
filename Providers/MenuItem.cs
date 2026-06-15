@@ -13,6 +13,7 @@ internal enum ControlAction
     None,
     Configure,
     Install,
+    ManageLiteLlm,
     Quit,
 }
 
@@ -21,7 +22,7 @@ internal sealed class MenuItem
 {
     internal required MenuItemKind Kind { get; init; }
     internal ControlAction ControlAction { get; init; }
-    internal string Provider { get; init; } = "";      // Ollama | Foundry | LM Studio
+    internal string Provider { get; init; } = "";      // Ollama | Foundry | LM Studio | LiteLLM
     internal string? BaseUrl { get; set; }              // OpenAI-compatible base (models only)
     internal string Model { get; init; } = "";          // model id / control label
     internal string? LoadAlias { get; init; }           // Foundry: alias used for `foundry model load`

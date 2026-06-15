@@ -54,6 +54,47 @@ internal static class LaunchOptionsPage
                 .ShowDefaultValue(cfg.ExtraArgs.Length > 0));
         cfg.ExtraArgs = (extra ?? "").Trim();
 
+        // LiteLLM provider controls.
+        cfg.LiteLlmEnabled = AnsiConsole.Prompt(new ConfirmationPrompt(
+            "Enable [teal]LiteLLM[/] provider in picker?") { DefaultValue = cfg.LiteLlmEnabled });
+
+        if (cfg.LiteLlmEnabled)
+        {
+            string baseUrl = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM base URL [dim](OpenAI-compatible, /v1 default)[/]:")
+                    .AllowEmpty()
+                    .DefaultValue(cfg.LiteLlmBaseUrl)
+                    .ShowDefaultValue(true));
+            cfg.LiteLlmBaseUrl = LaunchConfig.NormalizeBaseUrl(baseUrl);
+
+            string envVar = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM key env var [dim](preferred secret path)[/]:")
+                    .AllowEmpty()
+                    .DefaultValue(cfg.LiteLlmApiKeyEnvVar)
+                    .ShowDefaultValue(true));
+            cfg.LiteLlmApiKeyEnvVar = string.IsNullOrWhiteSpace(envVar) ? LaunchConfig.DefaultLiteLlmApiKeyEnvVar : envVar.Trim();
+
+            string apiKey = AnsiConsole.Prompt(
+                new TextPrompt<string>("LiteLLM API key [dim](optional plain-text fallback; leave blank to use env var only)[/]:")
+                    .AllowEmpty()
+                    .DefaultValue(cfg.LiteLlmApiKey)
+                    .ShowDefaultValue(cfg.LiteLlmApiKey.Length > 0));
+            cfg.LiteLlmApiKey = (apiKey ?? "").Trim();
+
+            cfg.LiteLlmRuntimeMode = AnsiConsole.Prompt(
+                new SelectionPrompt<string>()
+                    .Title("LiteLLM runtime mode [dim](used by install/manage flows)[/]:")
+                    .AddChoices(LaunchConfig.LiteLlmRuntimeModes));
+
+            cfg.HideLocalProvidersWhenLiteLlm = AnsiConsole.Prompt(new ConfirmationPrompt(
+                "Hide local providers [dim](Ollama/Foundry/LM Studio)[/] when LiteLLM is enabled?")
+            { DefaultValue = cfg.HideLocalProvidersWhenLiteLlm });
+        }
+        else
+        {
+            cfg.HideLocalProvidersWhenLiteLlm = false;
+        }
+
         cfg.Save();
 
         var preview = cfg.ToArgs(providers.ConfiguredMcpServers);

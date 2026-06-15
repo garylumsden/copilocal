@@ -9,7 +9,20 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Test
+        run: dotnet test tests/Copilocal.Tests/Copilocal.Tests.csproj -c Release --nologo
+
   build:
+    needs: test
     strategy:
       matrix:
         include:
@@ -70,3 +83,19 @@ jobs:
             dist/copilocal-*
             dist/SHA256SUMS.txt
           generate_release_notes: true
+
+  # Submit the new version's Windows installers to winget (microsoft/winget-pkgs).
+  # Opt-in: set repo variable PUBLISH_WINGET=true and secret WINGET_TOKEN (a classic PAT
+  # that can fork winget-pkgs). The first version must be published once manually
+  # (e.g. `wingetcreate submit` or komac) before this can keep it updated. winget is
+  # Windows-only, so only the win-x64/arm64 binaries are submitted (macOS is GitHub-only).
+  winget:
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_WINGET == 'true' }}
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: Gjlumsden.Copilocal
+          installers-regex: 'copilocal-win-(x64|arm64)\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}

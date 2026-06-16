@@ -191,8 +191,8 @@ internal sealed partial class ProviderInstaller
 
         if (OperatingSystem.IsWindows())
         {
-            string script = "$env:LITELLM_MASTER_KEY = '" + PsLiteral(key) + "'; " +
-                            "$p = Start-Process -FilePath '" + PsLiteral(start.File) + "' " +
+            string script = "$env:LITELLM_MASTER_KEY = " + PsSingleQuoted(key) + "; " +
+                            "$p = Start-Process -FilePath " + PsSingleQuoted(start.File) + " " +
                             "-ArgumentList " + PsArrayLiteral(args) + " -PassThru; $p.Id";
             var (code, outp, err) = proc.Run("powershell", $"-NoProfile -Command \"{script}\"", 30_000);
             if (code != 0) return (false, $"failed to launch LiteLLM process: {SingleLine(err, outp)}");
@@ -227,12 +227,12 @@ internal sealed partial class ProviderInstaller
         if (OperatingSystem.IsWindows())
         {
             int pid = pidInfo.Pid;
-            string marker = PsLiteral(pidInfo.Marker.ToLowerInvariant());
+            string marker = PsSingleQuoted(pidInfo.Marker.ToLowerInvariant());
             string script =
                 $"$p = Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction SilentlyContinue; " +
                 "if (-not $p) { exit 1 }; " +
                 "$cmd = (($p.CommandLine ?? '') + ' ' + ($p.ExecutablePath ?? '')).ToLowerInvariant(); " +
-                $"if (-not $cmd.Contains('{marker}')) {{ exit 2 }}; " +
+                $"if (-not $cmd.Contains({marker})) {{ exit 2 }}; " +
                 $"Stop-Process -Id {pid} -Force; exit 0";
             var (code, _, _) = proc.Run("powershell", $"-NoProfile -Command \"{script}\"", 20_000);
             if (code == 0) DeletePidFile();
@@ -284,6 +284,7 @@ internal sealed partial class ProviderInstaller
     {
         string key = ResolveLiteLlmApiKey(cfg);
         if (key.Length == 0) return false;
+        if (key.Any(char.IsControl)) return false;
         const string uiUser = "admin";
         try
         {
@@ -391,7 +392,7 @@ internal sealed partial class ProviderInstaller
                 $"$p = Get-CimInstance Win32_Process -Filter \"ProcessId = {pid}\" -ErrorAction SilentlyContinue; " +
                 "if (-not $p) { exit 1 }; " +
                 "$cmd = (($p.CommandLine ?? '') + ' ' + ($p.ExecutablePath ?? '')).ToLowerInvariant(); " +
-                $"if ($cmd.Contains('{PsLiteral(marker.ToLowerInvariant())}')) {{ exit 0 }} else {{ exit 2 }}";
+                $"if ($cmd.Contains({PsSingleQuoted(marker.ToLowerInvariant())})) {{ exit 0 }} else {{ exit 2 }}";
             var (code, _, _) = proc.Run("powershell", $"-NoProfile -Command \"{script}\"", 15_000);
             return code == 0;
         }

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Spectre.Console;
 
 using Copilocal.Infrastructure;
@@ -11,6 +12,7 @@ namespace Copilocal.Launch;
 internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
 {
     const int ChatTimeoutMs = 180_000;
+    static readonly Regex MarkdownTableSeparatorCell = new("^:?-{3,}:?$", RegexOptions.Compiled);
     internal const string DefaultSystemPrompt = """
         You are copilocal chat mode, a command-line assistant for experimenting with local language models.
 
@@ -32,6 +34,9 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
 
     internal sealed record ChatMessage(string Role, string Content);
     internal sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens);
+    internal sealed record MarkdownTable(IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows);
+    internal enum ChatBlockKind { Text, Table }
+    internal sealed record ChatBlock(ChatBlockKind Kind, string Text, MarkdownTable? Table);
 
     internal enum ReplyStatus
     {
@@ -114,7 +119,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
             {
                 case ReplyStatus.Ok:
                     messages.Add(new ChatMessage("assistant", reply.Content));
-                    AnsiConsole.MarkupLine($"[springgreen3]assistant>[/] {Markup.Escape(reply.Content)}");
+                    RenderAssistantContent(reply.Content, tokenTracker);
                     break;
                 case ReplyStatus.ReasoningOnly:
                     messages.RemoveAt(messages.Count - 1);
@@ -257,6 +262,127 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         {
             return null;
         }
+    }
+
+    static void RenderAssistantContent(string content, TokenUsageTracker tokenTracker)
+    {
+        AnsiConsole.MarkupLine("[springgreen3]assistant>[/]");
+        foreach (var block in SplitMarkdownBlocks(content))
+        {
+            if (block.Kind == ChatBlockKind.Table && block.Table is not null)
+                RenderMarkdownTable(block.Table);
+            else if (!string.IsNullOrWhiteSpace(block.Text))
+            {
+                AnsiConsole.Write(new Text(block.Text));
+                AnsiConsole.WriteLine();
+            }
+
+            tokenTracker.Render();
+        }
+    }
+
+    static void RenderMarkdownTable(MarkdownTable source)
+    {
+        var table = new Table().Border(TableBorder.Rounded).BorderColor(Color.Grey);
+        table.Expand();
+        foreach (var header in source.Headers)
+            table.AddColumn(Markup.Escape(header.Length == 0 ? " " : header));
+
+        foreach (var row in source.Rows)
+            table.AddRow(row.Select(cell => Markup.Escape(cell)).ToArray());
+
+        AnsiConsole.Write(table);
+        AnsiConsole.WriteLine();
+    }
+
+    internal static List<ChatBlock> SplitMarkdownBlocks(string content)
+    {
+        string normalized = (content ?? "").Replace("\r\n", "\n");
+        string[] lines = normalized.Split('\n');
+        var blocks = new List<ChatBlock>();
+        var textLines = new List<string>();
+
+        void FlushText()
+        {
+            if (textLines.Count == 0) return;
+            string text = string.Join('\n', textLines).Trim('\n');
+            if (text.Length > 0)
+                blocks.Add(new ChatBlock(ChatBlockKind.Text, text, null));
+            textLines.Clear();
+        }
+
+        for (int i = 0; i < lines.Length;)
+        {
+            if (TryReadMarkdownTable(lines, i, out var table, out int next))
+            {
+                FlushText();
+                blocks.Add(new ChatBlock(ChatBlockKind.Table, "", table));
+                i = next;
+                continue;
+            }
+
+            textLines.Add(lines[i]);
+            i++;
+        }
+
+        FlushText();
+        if (blocks.Count == 0)
+            blocks.Add(new ChatBlock(ChatBlockKind.Text, normalized, null));
+        return blocks;
+    }
+
+    internal static bool TryReadMarkdownTable(IReadOnlyList<string> lines, int startIndex, out MarkdownTable table, out int nextIndex)
+    {
+        table = new MarkdownTable(Array.Empty<string>(), Array.Empty<IReadOnlyList<string>>());
+        nextIndex = startIndex;
+        if (startIndex + 1 >= lines.Count) return false;
+
+        var headers = ParseMarkdownTableRow(lines[startIndex]);
+        if (headers.Count < 2) return false;
+
+        var separatorCells = ParseMarkdownTableRow(lines[startIndex + 1]);
+        if (separatorCells.Count != headers.Count
+            || separatorCells.Any(cell => !MarkdownTableSeparatorCell.IsMatch(cell)))
+            return false;
+
+        var rows = new List<IReadOnlyList<string>>();
+        int index = startIndex + 2;
+        while (index < lines.Count)
+        {
+            var row = ParseMarkdownTableRow(lines[index]);
+            if (row.Count == 0) break;
+            rows.Add(NormalizeRow(row, headers.Count));
+            index++;
+        }
+
+        if (rows.Count == 0) return false;
+
+        table = new MarkdownTable(headers, rows);
+        nextIndex = index;
+        return true;
+    }
+
+    internal static List<string> ParseMarkdownTableRow(string line)
+    {
+        string trimmed = (line ?? "").Trim();
+        if (trimmed.Length == 0 || !trimmed.Contains('|', StringComparison.Ordinal))
+            return new List<string>();
+
+        if (trimmed.StartsWith('|')) trimmed = trimmed[1..];
+        if (trimmed.EndsWith('|')) trimmed = trimmed[..^1];
+
+        var cells = trimmed.Split('|').Select(cell => cell.Trim()).ToList();
+        return cells.All(cell => cell.Length == 0) ? new List<string>() : cells;
+    }
+
+    static IReadOnlyList<string> NormalizeRow(IReadOnlyList<string> row, int columnCount)
+    {
+        var values = row.Take(columnCount).ToList();
+        if (row.Count > columnCount)
+            values[columnCount - 1] = values[columnCount - 1] + " | " + string.Join(" | ", row.Skip(columnCount));
+        while (values.Count < columnCount)
+            values.Add("");
+        return values;
     }
 
     static bool TryFirstMessage(JsonDocument doc, out JsonElement message)

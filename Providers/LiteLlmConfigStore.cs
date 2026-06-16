@@ -1,4 +1,4 @@
-using Copilocal.Launch;
+using Copilocal.Configuration;
 
 namespace Copilocal.Providers;
 

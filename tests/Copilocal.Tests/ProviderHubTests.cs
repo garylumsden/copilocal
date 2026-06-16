@@ -1,5 +1,5 @@
 using Copilocal;
-using Copilocal.Launch;
+using Copilocal.Configuration;
 using Copilocal.Providers;
 using Copilocal.Tests.Fakes;
 using FluentAssertions;

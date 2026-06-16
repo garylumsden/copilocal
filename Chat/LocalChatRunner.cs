@@ -1,11 +1,13 @@
 using System.Text;
 using Spectre.Console;
 
+using Copilocal.Configuration;
 using Copilocal.Infrastructure;
+using Copilocal.Launch;
 using Copilocal.Providers;
 using Copilocal.Ui;
 
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 /// <summary>Runs a local model-only chat loop without launching GitHub Copilot CLI.</summary>
 internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)

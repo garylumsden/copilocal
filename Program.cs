@@ -1,7 +1,9 @@
 using System.Text;
 using Spectre.Console;
 
+using Copilocal.Chat;
 using Copilocal.Cli;
+using Copilocal.Configuration;
 using Copilocal.Infrastructure;
 using Copilocal.Launch;
 using Copilocal.Providers;

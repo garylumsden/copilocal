@@ -3,7 +3,7 @@ using System.Text.Json;
 
 using Copilocal.Infrastructure;
 
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 internal static class ChatProtocol
 {

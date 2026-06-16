@@ -28,7 +28,7 @@ internal static class InstallFlow
                 Markup.Escape(p.Name),
                 Markup.Escape(p.Blurb),
                 Markup.Escape(p.InstallHow),
-                $"[link={p.DocsUrl}]{Markup.Escape(p.DocsUrl)}[/]");
+                Markup.Escape(p.DocsUrl));
         AnsiConsole.Write(table);
         AnsiConsole.MarkupLine("[dim]Space to toggle, Enter to confirm. Read the docs links above to decide.[/]");
 
@@ -327,7 +327,7 @@ internal static class InstallFlow
         string endpoint = LaunchConfig.NormalizeBaseUrl(cfg.LiteLlmBaseUrl);
         string uiUrl = LiteLlmUiUrl(endpoint);
         AnsiConsole.MarkupLine($"[dim]Endpoint:[/] [white]{Markup.Escape(endpoint)}[/]");
-        AnsiConsole.MarkupLine($"[dim]UI:[/] [link={uiUrl}]{Markup.Escape(uiUrl)}[/]");
+        AnsiConsole.MarkupLine($"[dim]UI:[/] {Markup.Escape(uiUrl)}");
     }
 
     static string LiteLlmUiUrl(string endpoint)

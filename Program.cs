@@ -205,7 +205,7 @@ internal static class Program
         AnsiConsole.Write(new Panel(
                 "[yellow]GitHub Copilot CLI (`copilot`) isn't on your PATH.[/]\n" +
                 "copilocal launches it once you pick a model — it won't work without it.\n\n" +
-                $"[dim]Docs:[/] [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]")
+                $"[dim]Docs:[/] {CopilotDocsUrl}")
             .Header("Copilot CLI not found").BorderColor(Color.Yellow).RoundedBorder());
 
         if (!interactive || !OperatingSystem.IsWindows())
@@ -221,7 +221,7 @@ internal static class Program
         AnsiConsole.Status().Start("Installing GitHub Copilot CLI (winget)...", _ => ok = installer.InstallCopilot());
         AnsiConsole.MarkupLine(ok
             ? "[green]✓[/] Copilot CLI installed. [dim]Restart your terminal (or re-run copilocal) so[/] [white]copilot[/] [dim]is on PATH, then sign in by running[/] [white]copilot[/][dim].[/]"
-            : $"[red]✗[/] Install failed. Install manually: [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]");
+            : $"[red]✗[/] Install failed. Install manually: {CopilotDocsUrl}");
     }
 
     static void ShowSessionSaved(string sessionId, string? sessionName)
@@ -283,8 +283,8 @@ internal static class Program
                 $"[yellow]{Markup.Escape(p.Name)} is installed but has no models.[/]\n\n" +
                 $"{extra}\n" +
                 $"  [white]{Markup.Escape(p.PullCmd)}[/]\n\n" +
-                $"[dim]Browse models:[/]  [link={p.ModelsDocsUrl}]{Markup.Escape(p.ModelsDocsUrl)}[/]\n" +
-                $"[dim]Docs:[/]          [link={p.DocsUrl}]{Markup.Escape(p.DocsUrl)}[/]\n\n" +
+                $"[dim]Browse models:[/]  {Markup.Escape(p.ModelsDocsUrl)}\n" +
+                $"[dim]Docs:[/]          {Markup.Escape(p.DocsUrl)}\n\n" +
                 "[grey58]Add a model, then return here — press Enter to re-scan.[/]")
             .Header($"Add a model for {Markup.Escape(p.Name)}").BorderColor(Color.Teal).RoundedBorder());
         AnsiConsole.Markup("[grey58]Press Enter to continue…[/]");

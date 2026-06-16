@@ -137,7 +137,7 @@ public sealed class LocalChatRunnerTests
     }
 
     [TestMethod]
-    public void SplitMarkdownBlocks_WithTable_ReturnsTextTableTextBlocks()
+    public void TryExtractFirstMarkdownTable_WithPipeTable_ReturnsParsedTable()
     {
         const string content = """
             Intro line
@@ -150,34 +150,45 @@ public sealed class LocalChatRunnerTests
             Outro line
             """;
 
-        var blocks = LocalChatRunner.SplitMarkdownBlocks(content);
+        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(content, out var table);
 
-        blocks.Should().HaveCount(3);
-        blocks[0].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Text);
-        blocks[1].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Table);
-        blocks[2].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Text);
-        blocks[1].Table!.Headers.Should().Equal("Model", "Tokens");
-        blocks[1].Table!.Rows.Should().HaveCount(2);
+        ok.Should().BeTrue();
+        table.Headers.Should().Equal("Model", "Tokens");
+        table.Rows.Should().HaveCount(2);
     }
 
     [TestMethod]
-    public void TryReadMarkdownTable_WithNoDataRows_ReturnsFalse()
+    public void TryExtractFirstMarkdownTable_WithNoDataRows_ReturnsFalse()
     {
-        var lines = new[]
-        {
-            "| A | B |",
-            "| --- | --- |",
-            "",
-        };
+        const string markdown = """
+            | A | B |
+            | --- | --- |
+            """;
 
-        bool ok = LocalChatRunner.TryReadMarkdownTable(lines, 0, out _, out _);
+        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(markdown, out _);
 
         ok.Should().BeFalse();
     }
 
     [TestMethod]
-    public void ParseMarkdownTableRow_WithoutPipes_ReturnsEmpty()
+    public void RenderMarkdownLine_RendersBoldCodeAndMarkdownLink()
     {
-        LocalChatRunner.ParseMarkdownTableRow("just text").Should().BeEmpty();
+        string rendered = LocalChatRunner.RenderMarkdownLine("Use **bold** and `code` and [docs](https://example.com).");
+
+        rendered.Should().Contain("[bold]bold[/]");
+        rendered.Should().Contain("[grey70]code[/]");
+        rendered.Should().Contain("docs (https://example.com)");
+    }
+
+    [TestMethod]
+    public void RenderMarkdownLine_HeadingAndBareUrl_AreRendered()
+    {
+        string heading = LocalChatRunner.RenderMarkdownLine("## Quick start");
+        string url = LocalChatRunner.RenderMarkdownLine("See https://example.com/docs.");
+
+        heading.Should().Contain("[bold]Quick start[/]");
+        url.Should().Contain("https://example.com/docs");
+        url.Should().NotContain("[link=");
+        url.Should().EndWith(".");
     }
 }

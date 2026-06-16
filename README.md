@@ -184,7 +184,7 @@ Commands inside chat:
 - `/multi` compose multiline input (finish with `/send`, cancel with `/cancel`)
 - `/exit` return to model picker
 - bottom-right token tracker showing active model, cumulative tokens, and last-turn token usage (when provider returns `usage` fields)
-- assistant replies wrap to terminal width and render markdown tables as native terminal tables
+- assistant replies wrap to terminal width and render common markdown (headings, emphasis, inline code, links) plus markdown tables as native terminal tables
 
 ### How models are discovered
 

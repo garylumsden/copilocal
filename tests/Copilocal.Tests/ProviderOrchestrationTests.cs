@@ -392,16 +392,16 @@ public sealed class ProviderOrchestrationTests
     [DataRow("I am ready to help.", false)]
     [DataRow("", false)]
     public void LooksLikeToolCallText_ClassifiesContent(string content, bool expected) =>
-        ProviderHub.LooksLikeToolCallText(content).Should().Be(expected);
+        ProviderResponses.LooksLikeToolCallText(content).Should().Be(expected);
 
     [TestMethod]
     public void HasToolCall_EmptyToolCallsArray_ReturnsFalse() =>
-        ProviderHub.HasToolCall("""{"choices":[{"message":{"content":"hi","tool_calls":[]}}]}""")
+        ProviderResponses.HasToolCall("""{"choices":[{"message":{"content":"hi","tool_calls":[]}}]}""")
             .Should().BeFalse();
 
     [TestMethod]
     public void HasToolCall_PopulatedToolCallsArray_ReturnsTrue() =>
-        ProviderHub.HasToolCall("""{"choices":[{"message":{"tool_calls":[{"function":{"name":"x"}}]}}]}""")
+        ProviderResponses.HasToolCall("""{"choices":[{"message":{"tool_calls":[{"function":{"name":"x"}}]}}]}""")
             .Should().BeTrue();
 
     [TestMethod]
@@ -636,7 +636,7 @@ public sealed class ProviderOrchestrationTests
     [DataRow("{\"choices\":[{\"message\":\"hi\"}]}")]
     [DataRow("{\"choices\":[{\"message\":123}]}")]
     public void HasToolCall_ParseableButWrongShape_ReturnsFalse(string body) =>
-        ProviderHub.HasToolCall(body).Should().BeFalse();
+        ProviderResponses.HasToolCall(body).Should().BeFalse();
 
     [TestMethod]
     public void ModelContextLength_FoundryModelNotObject_ReturnsZero()

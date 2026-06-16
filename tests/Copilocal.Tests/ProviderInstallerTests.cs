@@ -744,6 +744,103 @@ public sealed class ProviderInstallerTests
         });
     }
 
+    [TestMethod]
+    public void ParseFoundry_NonStringFields_SkipsBadEntriesAndKeepsGoodEntry()
+    {
+        string json = """
+            {
+              "models": [
+                { "displayName": 123, "id": "bad-number", "alias": "bad" },
+                { "displayName": { "value": "bad" }, "id": "bad-object", "alias": "bad" },
+                { "displayName": "Good model", "id": { "value": "not-string" }, "alias": "good-alias", "supportsToolCalling": true }
+              ]
+            }
+            """;
+
+        var result = ProviderHub.ParseFoundry(json).ToList();
+
+        result.Should().ContainSingle();
+        result[0].Id.Should().Be("Good model");
+        result[0].LoadId.Should().Be("good-alias");
+        result[0].Tools.Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void ParseLmStudio_NonStringFields_SkipsBadEntriesAndKeepsGoodEntry()
+    {
+        string json = """
+            [
+              { "type": 7, "modelKey": 123 },
+              { "type": { "kind": "llm" }, "modelKey": { "value": "bad" } },
+              { "type": "llm", "modelKey": "good-model" }
+            ]
+            """;
+
+        ProviderHub.ParseLmStudio(json).ToList().Should().Equal(["good-model"]);
+    }
+
+    [TestMethod]
+    public void StartLiteLlm_Docker_KeyWithNewline_ReturnsFalseAndDoesNotInjectEnvLine()
+    {
+        RunWithIsolatedLiteLlmDir(() =>
+        {
+            var proc = new FakeProcessRunner();
+            proc.WhichResults["docker"] = @"C:\fake\docker.exe";
+            var installer = new ProviderInstaller(proc, new FakeHttpGateway());
+            var cfg = new LaunchConfig
+            {
+                LiteLlmRuntimeMode = "docker",
+                LiteLlmBaseUrl = "http://localhost:4010",
+                LiteLlmApiKey = "plain-key\nEVIL=1",
+            };
+
+            var result = installer.StartLiteLlmWithDetail(cfg);
+
+            result.Ok.Should().BeFalse();
+            result.Detail.Should().Contain("failed to write");
+            File.ReadAllText(LiteLlmDockerEnvPath()).Should().NotContain("EVIL=1");
+            proc.RunCalls.Should().BeEmpty();
+        });
+    }
+
+    [TestMethod]
+    public void StartLiteLlm_Docker_ComposeWithoutAliasAnchor_ReturnsFalseWithoutComposeUp()
+    {
+        RunWithIsolatedLiteLlmDir(() =>
+        {
+            Directory.CreateDirectory(LiteLlmDir());
+            string composePath = Path.Join(LiteLlmDir(), "docker-compose.yml");
+            File.WriteAllText(composePath, """
+                services:
+                  litellm:
+                    image: ghcr.io/berriai/litellm:main-latest
+                    command: ["--config=/app/config.yaml"]
+                """);
+            File.WriteAllText(LiteLlmDockerConfigPath(), """
+                model_list: []
+                general_settings:
+                  master_key: os.environ/LITELLM_MASTER_KEY
+                  database_url: os.environ/LITELLM_DATABASE_URL
+                """);
+            var proc = new FakeProcessRunner();
+            proc.WhichResults["docker"] = @"C:\fake\docker.exe";
+            var installer = new ProviderInstaller(proc, new FakeHttpGateway());
+            var cfg = new LaunchConfig
+            {
+                LiteLlmRuntimeMode = "docker",
+                LiteLlmBaseUrl = "http://localhost:4010",
+                LiteLlmApiKey = "sk-test-key",
+            };
+
+            var result = installer.StartLiteLlmWithDetail(cfg);
+
+            result.Ok.Should().BeFalse();
+            result.Detail.Should().Contain("failed to update");
+            File.ReadAllText(composePath).Should().NotContain("host.docker.internal:host-gateway");
+            proc.RunCalls.Should().BeEmpty();
+        });
+    }
+
     private static string LiteLlmDir() =>
         Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal", "litellm");
 

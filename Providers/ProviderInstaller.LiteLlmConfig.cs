@@ -127,8 +127,10 @@ internal sealed partial class ProviderInstaller
                     "    env_file:\n      - .env\n    ports:",
                     "    env_file:\n      - .env\n    extra_hosts:\n      - \"host.docker.internal:host-gateway\"\n    ports:",
                     StringComparison.Ordinal);
-            if (!string.Equals(current, updated, StringComparison.Ordinal))
-                File.WriteAllText(LiteLlmComposePath, updated);
+            if (string.Equals(current, updated, StringComparison.Ordinal))
+                return false;
+
+            File.WriteAllText(LiteLlmComposePath, updated);
             return true;
         }
         catch (IOException)

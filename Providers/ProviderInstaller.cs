@@ -63,7 +63,7 @@ internal sealed partial class ProviderInstaller(IProcessRunner proc, IHttpGatewa
         {
             http.DownloadToFile(url, tmp, 600_000);
             var (code, _, _) = proc.Run("powershell",
-                $"-NoProfile -Command \"Add-AppxPackage -Path '{tmp}'\"", 300_000);
+                $"-NoProfile -Command \"Add-AppxPackage -Path {PsSingleQuoted(tmp)}\"", 300_000);
             return code == 0;
         }
         catch (HttpRequestException)
@@ -158,10 +158,21 @@ internal sealed partial class ProviderInstaller(IProcessRunner proc, IHttpGatewa
         }
     }
 
-    static string PsLiteral(string s) => s.Replace("'", "''");
-    static string PsArrayLiteral(IEnumerable<string> args) => "@('" + string.Join("','", args.Select(PsLiteral)) + "')";
-    static string ShArg(string s) => "'" + ShLiteral(s) + "'";
-    static string ShLiteral(string s) => s.Replace("'", "'\"'\"'");
+    internal static string PsSingleQuoted(string value) =>
+        "'" + (value ?? "")
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("'", "''", StringComparison.Ordinal) + "'";
+
+    internal static string PsArrayLiteral(IEnumerable<string> args) =>
+        "@(" + string.Join(",", args.Select(PsSingleQuoted)) + ")";
+
+    internal static string ShArg(string value) => "'" + ShLiteral(value) + "'";
+
+    internal static string ShLiteral(string value) =>
+        (value ?? "")
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("'", "'\\''", StringComparison.Ordinal);
+
     static string SingleLine(string preferred, string fallback)
     {
         string source = string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;

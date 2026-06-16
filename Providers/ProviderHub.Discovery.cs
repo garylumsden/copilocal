@@ -127,10 +127,10 @@ internal sealed partial class ProviderHub
             foreach (var m in models.EnumerateArray())
             {
                 if (m.ValueKind != JsonValueKind.Object) continue;
-                string display = m.TryGetProperty("displayName", out var dn) ? dn.GetString() ?? "" : "";
+                string display = Str(m, "displayName");
                 if (display.Length == 0) continue;   // need a name to show in the menu
-                string variantId = m.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "" : "";
-                string alias = m.TryGetProperty("alias", out var al) ? al.GetString() ?? "" : "";
+                string variantId = Str(m, "id");
+                string alias = Str(m, "alias");
                 bool tools = m.TryGetProperty("supportsToolCalling", out var tc) && tc.ValueKind == JsonValueKind.True;
                 // Load/info/unload use the concrete variant id (with its ":version") so the exact
                 // cached variant is targeted; the bare alias lets Foundry auto-pick a device
@@ -154,11 +154,16 @@ internal sealed partial class ProviderHub
             foreach (var m in doc.RootElement.EnumerateArray())
             {
                 if (m.ValueKind != JsonValueKind.Object) continue;
-                string type = m.TryGetProperty("type", out var t) ? t.GetString() ?? "" : "";
+                string type = Str(m, "type");
                 if (type == "embedding") continue;
-                string id = m.TryGetProperty("modelKey", out var k) ? k.GetString() ?? "" : "";
+                string id = Str(m, "modelKey");
                 if (id.Length > 0) yield return id;
             }
         }
     }
+
+    static string Str(JsonElement parent, string prop) =>
+        parent.TryGetProperty(prop, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
 }

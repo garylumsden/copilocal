@@ -6,6 +6,10 @@ internal static class TerminalUi
     const string ExitAltScreen = "\u001b[?1049l";
     const string ClearAndHome = "\u001b[2J\u001b[H";
 
+    // Tracks whether the alternate screen buffer is currently active, so chat mode can
+    // temporarily suspend it (the alt buffer has no scrollback) and the menu can resume it.
+    static bool _altActive;
+
     internal static IDisposable StartSession(bool interactive)
     {
         if (!interactive || Console.IsOutputRedirected)
@@ -19,7 +23,8 @@ internal static class TerminalUi
 
         try
         {
-            Console.Write(EnterAltScreen);
+            Write(EnterAltScreen);
+            _altActive = true;
             ClearScreen();
             return new AltScreenScope();
         }
@@ -38,6 +43,17 @@ internal static class TerminalUi
             ClearScreen();
             return NoopScope.Instance;
         }
+    }
+
+    /// <summary>Temporarily leave the alternate screen so output renders on the normal buffer,
+    /// which keeps the terminal's native scrollback (the alt buffer has none). Disposing the
+    /// returned token re-enters and clears the alternate screen. No-op when no alt screen is active.</summary>
+    internal static IDisposable SuspendAltScreen()
+    {
+        if (!_altActive) return NoopScope.Instance;
+        Write(ExitAltScreen);
+        _altActive = false;
+        return new ResumeScope();
     }
 
     internal static void ClearScreen()
@@ -70,12 +86,21 @@ internal static class TerminalUi
         return true;
     }
 
+    // Writing ExitAltScreen/EnterAltScreen is idempotent at the terminal level (a no-op when
+    // already in the requested buffer), so callers can write them freely without one-shot guards.
+    static void Write(string sequence)
+    {
+        try { Console.Write(sequence); }
+        catch (IOException) { }
+        catch (InvalidOperationException) { }
+        catch (PlatformNotSupportedException) { }
+    }
+
     sealed class AltScreenScope : IDisposable
     {
         readonly ConsoleCancelEventHandler _cancelHandler;
         readonly EventHandler _processExitHandler;
         bool _disposed;
-        int _restored;
 
         internal AltScreenScope()
         {
@@ -106,17 +131,25 @@ internal static class TerminalUi
             catch (PlatformNotSupportedException) { }
         }
 
-        void RestoreAltScreen()
+        static void RestoreAltScreen()
         {
-            if (System.Threading.Interlocked.Exchange(ref _restored, 1) == 1) return;
+            // Idempotent: harmless if the alt buffer is already suspended (chat mode) or exited.
+            Write(ExitAltScreen);
+            _altActive = false;
+        }
+    }
 
-            try
-            {
-                Console.Write(ExitAltScreen);
-            }
-            catch (IOException) { }
-            catch (InvalidOperationException) { }
-            catch (PlatformNotSupportedException) { }
+    sealed class ResumeScope : IDisposable
+    {
+        bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Write(EnterAltScreen);
+            _altActive = true;
+            ClearScreen();
         }
     }
 

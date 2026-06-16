@@ -11,6 +11,7 @@ internal static class LaunchOptionsPage
 {
     internal static void Show(ProviderHub providers)
     {
+        TerminalUi.ClearScreen();
         var cfg = LaunchConfig.Load();
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[teal]Configure copilot launch options[/]").LeftJustified());

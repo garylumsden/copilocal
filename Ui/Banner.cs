@@ -36,11 +36,11 @@ internal static class Banner
     static readonly int FinalIconX = WordWidth + Gap;
 
     /// <summary>Draw the banner with icon fly-in and vertical teal→indigo gradient.</summary>
-    internal static void Draw()
+    internal static void Draw(bool animate = true)
     {
         var (top, bot) = GradientSets[Random.Shared.Next(GradientSets.Length)];
 
-        if (Console.IsOutputRedirected)
+        if (!animate || Console.IsOutputRedirected)
         {
             DrawFrame(BuildFrame(FinalIconX, showTrail: false), top, bot);
             return;

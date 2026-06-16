@@ -28,20 +28,21 @@ internal static class Program
         var chatRunner = new LocalChatRunner(providers, http);
 
         var cli = CommandLineArgs.Parse(argv);
+        using var terminalSession = TerminalUi.StartSession(cli.Interactive);
         // A stable session id lets us resume the same conversation with a new model.
         string? sessionId = cli.WantsManagedSession ? Guid.NewGuid().ToString() : null;
-
-        AnsiConsole.WriteLine();
-        Banner.Draw();
-        AnsiConsole.MarkupLine("[grey58 italic]      Pick a local model · launch Copilot CLI or chat locally[/]\n");
 
         bool resuming = false;
         MenuItem? lastLaunched = null;   // to unload when switching models on continue
         bool liteLlmAutoStartAttempted = false;
         bool copilotCliEnsured = false;
+        bool animateBanner = true;
 
         while (true)
         {
+            DrawPickerHeader(animateBanner);
+            animateBanner = false;
+
             var launchCfg = LaunchConfig.Load();
             bool liteEnabled = launchCfg.LiteLlmEnabled;
             bool includeLocalProviders = !(liteEnabled && launchCfg.HideLocalProvidersWhenLiteLlm);
@@ -193,6 +194,14 @@ internal static class Program
     static LaunchOptions Options(CommandLineArgs cli, string? sessionId, bool resuming) =>
         new(cli.DryRun, cli.Interactive, cli.Offline, sessionId, cli.SessionName, resuming, cli.CopilotArgs);
 
+    static void DrawPickerHeader(bool animateBanner)
+    {
+        TerminalUi.ClearScreen();
+        AnsiConsole.WriteLine();
+        Banner.Draw(animateBanner);
+        AnsiConsole.MarkupLine("[grey58 italic]      Pick a local model · launch Copilot CLI or chat locally[/]\n");
+    }
+
     const string CopilotDocsUrl = "https://github.com/github/copilot-cli";
 
     // copilocal launches `copilot`, so a missing CLI means nothing works. Offer to install it
@@ -201,11 +210,12 @@ internal static class Program
     {
         if (providers.HasCopilot) return;
 
+        TerminalUi.ClearScreen();
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Panel(
                 "[yellow]GitHub Copilot CLI (`copilot`) isn't on your PATH.[/]\n" +
                 "copilocal launches it once you pick a model — it won't work without it.\n\n" +
-                $"[dim]Docs:[/] {CopilotDocsUrl}")
+                $"[dim]Docs:[/] [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]")
             .Header("Copilot CLI not found").BorderColor(Color.Yellow).RoundedBorder());
 
         if (!interactive || !OperatingSystem.IsWindows())
@@ -221,11 +231,12 @@ internal static class Program
         AnsiConsole.Status().Start("Installing GitHub Copilot CLI (winget)...", _ => ok = installer.InstallCopilot());
         AnsiConsole.MarkupLine(ok
             ? "[green]✓[/] Copilot CLI installed. [dim]Restart your terminal (or re-run copilocal) so[/] [white]copilot[/] [dim]is on PATH, then sign in by running[/] [white]copilot[/][dim].[/]"
-            : $"[red]✗[/] Install failed. Install manually: {CopilotDocsUrl}");
+            : $"[red]✗[/] Install failed. Install manually: [link={CopilotDocsUrl}]{CopilotDocsUrl}[/]");
     }
 
     static void ShowSessionSaved(string sessionId, string? sessionName)
     {
+        TerminalUi.ClearScreen();
         string label = sessionName is { Length: > 0 } ? $"{Markup.Escape(sessionName)} [dim]({Short(sessionId)})[/]" : $"[teal]{Markup.Escape(sessionId)}[/]";
         string resumeArg = sessionName is { Length: > 0 } ? $"\"{sessionName}\"" : Short(sessionId);
         AnsiConsole.WriteLine();
@@ -234,6 +245,8 @@ internal static class Program
                 $"[dim]Resume manually any time with:[/]  copilot --resume={resumeArg}\n" +
                 $"[dim]Or pick a new model below to continue this session.[/]")
             .Header("Copilot session ended").BorderColor(Color.Grey).RoundedBorder());
+        AnsiConsole.Markup("[grey58]Press Enter to continue…[/]");
+        Console.ReadLine();
     }
 
     internal static string Short(string? id) => id is { Length: >= 8 } ? id[..8] : id ?? "";
@@ -270,6 +283,7 @@ internal static class Program
 
     static void ShowModelHelp(ProviderInfo p)
     {
+        TerminalUi.ClearScreen();
         string extra = p.Key switch
         {
             "Ollama" => "[dim]Browse the library, then pull any model:[/]",
@@ -283,8 +297,8 @@ internal static class Program
                 $"[yellow]{Markup.Escape(p.Name)} is installed but has no models.[/]\n\n" +
                 $"{extra}\n" +
                 $"  [white]{Markup.Escape(p.PullCmd)}[/]\n\n" +
-                $"[dim]Browse models:[/]  {Markup.Escape(p.ModelsDocsUrl)}\n" +
-                $"[dim]Docs:[/]          {Markup.Escape(p.DocsUrl)}\n\n" +
+                $"[dim]Browse models:[/]  [link={p.ModelsDocsUrl}]{Markup.Escape(p.ModelsDocsUrl)}[/]\n" +
+                $"[dim]Docs:[/]          [link={p.DocsUrl}]{Markup.Escape(p.DocsUrl)}[/]\n\n" +
                 "[grey58]Add a model, then return here — press Enter to re-scan.[/]")
             .Header($"Add a model for {Markup.Escape(p.Name)}").BorderColor(Color.Teal).RoundedBorder());
         AnsiConsole.Markup("[grey58]Press Enter to continue…[/]");

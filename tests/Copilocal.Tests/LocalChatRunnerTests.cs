@@ -137,6 +137,41 @@ public sealed class LocalChatRunnerTests
     }
 
     [TestMethod]
+    public void AutocompleteChatCommand_UniquePrefix_ResolvesCommand()
+    {
+        var result = LocalChatRunner.AutocompleteChatCommand("/h");
+
+        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Resolved);
+        result.Command.Should().Be("/help");
+    }
+
+    [TestMethod]
+    public void AutocompleteChatCommand_SlashOnly_ReturnsCommandChoices()
+    {
+        var result = LocalChatRunner.AutocompleteChatCommand("/");
+
+        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Ambiguous);
+        result.Matches.Should().Contain(new[] { "/help", "/clear", "/multi", "/exit", "/quit" });
+    }
+
+    [TestMethod]
+    public void AutocompleteChatCommand_QuitAlias_NormalizesToExit()
+    {
+        var result = LocalChatRunner.AutocompleteChatCommand("/quit");
+
+        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Resolved);
+        result.Command.Should().Be("/exit");
+    }
+
+    [TestMethod]
+    public void AutocompleteChatCommand_UnknownSlash_ReturnsUnknown()
+    {
+        var result = LocalChatRunner.AutocompleteChatCommand("/doesnotexist");
+
+        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Unknown);
+    }
+
+    [TestMethod]
     public void TryExtractFirstMarkdownTable_WithPipeTable_ReturnsParsedTable()
     {
         const string content = """
@@ -177,7 +212,7 @@ public sealed class LocalChatRunnerTests
 
         rendered.Should().Contain("[bold]bold[/]");
         rendered.Should().Contain("[grey70]code[/]");
-        rendered.Should().Contain("docs (https://example.com)");
+        rendered.Should().Contain("[link=https://example.com]docs[/]");
     }
 
     [TestMethod]
@@ -187,8 +222,7 @@ public sealed class LocalChatRunnerTests
         string url = LocalChatRunner.RenderMarkdownLine("See https://example.com/docs.");
 
         heading.Should().Contain("[bold]Quick start[/]");
-        url.Should().Contain("https://example.com/docs");
-        url.Should().NotContain("[link=");
+        url.Should().Contain("[link=https://example.com/docs]https://example.com/docs[/]");
         url.Should().EndWith(".");
     }
 }

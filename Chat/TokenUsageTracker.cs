@@ -1,6 +1,6 @@
 using Spectre.Console;
 
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 internal sealed class TokenUsageTracker
 {

@@ -1,4 +1,4 @@
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 internal sealed record ChatMessage(string Role, string Content);
 internal sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens);

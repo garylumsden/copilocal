@@ -1,6 +1,6 @@
 using Spectre.Console;
 
-using Copilocal.Launch;
+using Copilocal.Configuration;
 using Copilocal.Providers;
 
 namespace Copilocal.Ui;

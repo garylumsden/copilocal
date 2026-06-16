@@ -1,6 +1,5 @@
 using System.Text.Json;
-
-using Copilocal.Launch;
+using Copilocal.Chat;
 using FluentAssertions;
 
 namespace Copilocal.Tests;

@@ -9,7 +9,7 @@ using MarkdigTableCell = Markdig.Extensions.Tables.TableCell;
 using MarkdigTableRow = Markdig.Extensions.Tables.TableRow;
 using Spectre.Console;
 
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 internal static class ChatMarkdownRenderer
 {

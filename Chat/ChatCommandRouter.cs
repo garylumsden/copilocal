@@ -1,6 +1,6 @@
 using Spectre.Console;
 
-namespace Copilocal.Launch;
+namespace Copilocal.Chat;
 
 internal static class ChatCommandRouter
 {

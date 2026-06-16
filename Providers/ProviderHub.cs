@@ -1,7 +1,7 @@
 using System.Text.Json;
 
+using Copilocal.Configuration;
 using Copilocal.Infrastructure;
-using Copilocal.Launch;
 
 namespace Copilocal.Providers;
 

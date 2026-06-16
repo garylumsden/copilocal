@@ -183,7 +183,9 @@ Commands inside chat:
 - `/clear` reset conversation history
 - `/multi` compose multiline input (finish with `/send`, cancel with `/cancel`)
 - `/exit` return to model picker
-- `Ctrl+C` also returns to model picker (same behavior as `/exit`)
+- `Ctrl+C` also returns to model picker (same behavior as `/exit`). Note: while a model
+  response is in flight (the `Thinking…` spinner), `Ctrl+C` is honored only after the
+  request returns or the request timeout elapses — the HTTP call itself is not cancelled mid-flight.
 - slash command autocomplete: type `/` then Enter to pick a command, or use unique prefixes like `/h`
 - bottom-right token tracker showing active model, cumulative tokens, and last-turn token usage (when provider returns `usage` fields)
 - assistant replies wrap to terminal width and render common markdown (headings, emphasis, inline code, links) plus markdown tables as native terminal tables

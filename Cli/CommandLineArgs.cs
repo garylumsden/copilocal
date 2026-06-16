@@ -63,7 +63,12 @@ internal sealed record CommandLineArgs(
     static int ExtractInt(List<string> args, string flag)
     {
         int i = args.IndexOf(flag);
-        if (i < 0 || i + 1 >= args.Count) return -1;
+        if (i < 0) return -1;
+        if (i + 1 >= args.Count)
+        {
+            args.RemoveAt(i);
+            return -1;
+        }
         int.TryParse(args[i + 1], out int v);
         args.RemoveRange(i, 2);
         return v;
@@ -72,7 +77,12 @@ internal sealed record CommandLineArgs(
     static string? ExtractValue(List<string> args, string flag)
     {
         int i = args.IndexOf(flag);
-        if (i < 0 || i + 1 >= args.Count) return null;
+        if (i < 0) return null;
+        if (i + 1 >= args.Count)
+        {
+            args.RemoveAt(i);
+            return null;
+        }
         string v = args[i + 1];
         args.RemoveRange(i, 2);
         return v;

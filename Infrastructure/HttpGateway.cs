@@ -43,10 +43,36 @@ internal sealed class HttpGateway : IHttpGateway
 
     public void DownloadToFile(string url, string path, int timeoutMs)
     {
-        using var cts = new CancellationTokenSource(timeoutMs);
-        using var resp = Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).GetAwaiter().GetResult();
-        resp.EnsureSuccessStatusCode();
-        using var fs = File.Create(path);
-        resp.Content.CopyToAsync(fs, cts.Token).GetAwaiter().GetResult();
+        string partialPath = path + ".part";
+        try
+        {
+            using var cts = new CancellationTokenSource(timeoutMs);
+            using var resp = Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cts.Token).GetAwaiter().GetResult();
+            resp.EnsureSuccessStatusCode();
+            using (var fs = File.Create(partialPath))
+            {
+                resp.Content.CopyToAsync(fs, cts.Token).GetAwaiter().GetResult();
+            }
+            File.Move(partialPath, path, overwrite: true);
+        }
+        catch
+        {
+            TryDelete(partialPath);
+            throw;
+        }
+    }
+
+    static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 }

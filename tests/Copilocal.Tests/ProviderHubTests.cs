@@ -16,7 +16,7 @@ public sealed class ProviderHubTests
         const string text = "This model responds with coherent prose across several normal English words.";
 
         // Act
-        var result = ProviderHub.LooksGarbled(text);
+        var result = ProviderResponses.LooksGarbled(text);
 
         // Assert
         result.Should().BeFalse();
@@ -29,7 +29,7 @@ public sealed class ProviderHubTests
         const string text = "UKUKUKUKUK";
 
         // Act
-        var result = ProviderHub.LooksGarbled(text);
+        var result = ProviderResponses.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -42,7 +42,7 @@ public sealed class ProviderHubTests
         const string text = "90. 111 161 .222 33r 440 666";
 
         // Act
-        var result = ProviderHub.LooksGarbled(text);
+        var result = ProviderResponses.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -55,7 +55,7 @@ public sealed class ProviderHubTests
         const string text = "alpha 123 456";
 
         // Act
-        var result = ProviderHub.LooksGarbled(text);
+        var result = ProviderResponses.LooksGarbled(text);
 
         // Assert
         result.Should().BeTrue();
@@ -67,7 +67,7 @@ public sealed class ProviderHubTests
     [DataRow("Yes, I am ready.")]
     [DataRow("I'm ready to help.")]
     public void LooksGarbled_TerseValidReply_ReturnsFalse(string text) =>
-        ProviderHub.LooksGarbled(text).Should().BeFalse();
+        ProviderResponses.LooksGarbled(text).Should().BeFalse();
 
     [TestMethod]
     public void LooksGarbled_VeryShortString_ReturnsFalse()
@@ -76,7 +76,7 @@ public sealed class ProviderHubTests
         const string text = "._.";
 
         // Act
-        var result = ProviderHub.LooksGarbled(text);
+        var result = ProviderResponses.LooksGarbled(text);
 
         // Assert
         result.Should().BeFalse();
@@ -108,7 +108,7 @@ public sealed class ProviderHubTests
             """;
 
         // Act
-        var result = ProviderHub.ParseFoundry(json).ToList();
+        var result = ProviderParsers.ParseFoundry(json).ToList();
 
         // Assert
         result.Should().HaveCount(2);
@@ -127,7 +127,7 @@ public sealed class ProviderHubTests
         var inputs = new[] { "", "not json", """{ "models": [ }""" };
 
         // Act
-        var result = inputs.Select(json => ProviderHub.ParseFoundry(json).ToList()).ToList();
+        var result = inputs.Select(json => ProviderParsers.ParseFoundry(json).ToList()).ToList();
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);
@@ -137,11 +137,11 @@ public sealed class ProviderHubTests
     public void ParseFoundry_NonArrayModelsOrNonObjectElements_DoesNotThrow()
     {
         // "models" not an array -> empty (no throw).
-        ProviderHub.ParseFoundry("""{"models":"oops"}""").ToList().Should().BeEmpty();
+        ProviderParsers.ParseFoundry("""{"models":"oops"}""").ToList().Should().BeEmpty();
         // root not an object -> empty (no throw).
-        ProviderHub.ParseFoundry("""{"x":1}""").ToList().Should().BeEmpty();
+        ProviderParsers.ParseFoundry("""{"x":1}""").ToList().Should().BeEmpty();
         // non-object array elements are skipped, valid ones kept.
-        ProviderHub.ParseFoundry("""{"models":[123,"s",{"displayName":"Phi","alias":"phi"}]}""")
+        ProviderParsers.ParseFoundry("""{"models":[123,"s",{"displayName":"Phi","alias":"phi"}]}""")
             .ToList().Should().ContainSingle().Which.Id.Should().Be("Phi");
     }
 
@@ -170,7 +170,7 @@ public sealed class ProviderHubTests
             """;
 
         // Act
-        var result = ProviderHub.ParseLmStudio(json).ToList();
+        var result = ProviderParsers.ParseLmStudio(json).ToList();
 
         // Assert
         result.Should().Equal("qwen/qwen3-coder", "meta/llama");
@@ -183,7 +183,7 @@ public sealed class ProviderHubTests
         var inputs = new[] { "", "not json", """[{ "modelKey": ]""" };
 
         // Act
-        var result = inputs.Select(json => ProviderHub.ParseLmStudio(json).ToList()).ToList();
+        var result = inputs.Select(json => ProviderParsers.ParseLmStudio(json).ToList()).ToList();
 
         // Assert
         result.Should().OnlyContain(items => items.Count == 0);
@@ -192,7 +192,7 @@ public sealed class ProviderHubTests
     [TestMethod]
     public void ParseLmStudio_NonObjectElements_AreSkipped()
     {
-        ProviderHub.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
+        ProviderParsers.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
             .ToList().Should().Equal("a");
     }
 
@@ -211,7 +211,7 @@ public sealed class ProviderHubTests
             }
             """;
 
-        ProviderHub.ParseLiteLlmModels(json)
+        ProviderParsers.ParseLiteLlmModels(json)
             .ToList()
             .Should()
             .Equal("gpt-4o", "qwen2.5-coder:7b");
@@ -230,7 +230,7 @@ public sealed class ProviderHubTests
             }
             """;
 
-        ProviderHub.ParseLiteLlmModels(json)
+        ProviderParsers.ParseLiteLlmModels(json)
             .ToList()
             .Should()
             .Equal("gpt-4.1-mini");
@@ -254,9 +254,9 @@ public sealed class ProviderHubTests
     [TestMethod]
     public void ParseLiteLlmModels_WrongShapeOrMalformed_ReturnsEmpty()
     {
-        ProviderHub.ParseLiteLlmModels("""{"data":"oops"}""").Should().BeEmpty();
-        ProviderHub.ParseLiteLlmModels("""{"x":1}""").Should().BeEmpty();
-        ProviderHub.ParseLiteLlmModels("{ not json").Should().BeEmpty();
+        ProviderParsers.ParseLiteLlmModels("""{"data":"oops"}""").Should().BeEmpty();
+        ProviderParsers.ParseLiteLlmModels("""{"x":1}""").Should().BeEmpty();
+        ProviderParsers.ParseLiteLlmModels("{ not json").Should().BeEmpty();
     }
 
     [TestMethod]

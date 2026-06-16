@@ -128,10 +128,11 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void BuildTokenUsageLine_FormatsWithAndWithoutLastUsage()
     {
-        LocalChatRunner.BuildTokenUsageLine(100, 25, 125, null)
-            .Should().Contain("last:n/a");
+        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, null)
+            .Should().Contain("m:qwen2.5-coder:7b")
+            .And.Contain("last:n/a");
 
-        LocalChatRunner.BuildTokenUsageLine(100, 25, 125, new LocalChatRunner.TokenUsage(10, 5, 15))
+        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, new LocalChatRunner.TokenUsage(10, 5, 15))
             .Should().Contain("last:15 (p10/c5)");
     }
 }

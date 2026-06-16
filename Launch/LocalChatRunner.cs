@@ -68,7 +68,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
             AnsiConsole.MarkupLine($"[yellow]Model response looked unusual:[/] {Markup.Escape(warm.Detail)}");
 
         ShowHeader(model, baseUrl);
-        var tokenTracker = new TokenUsageTracker();
+        var tokenTracker = new TokenUsageTracker(model.Model);
         tokenTracker.Render();
         var messages = new List<ChatMessage> { new("system", DefaultSystemPrompt) };
         while (true)
@@ -379,19 +379,35 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         return Trim(body);
     }
 
-    internal static string BuildTokenUsageLine(int promptTotal, int completionTotal, int total, TokenUsage? last) =>
-        last is null
-            ? $"tok sum:{total} p:{promptTotal} c:{completionTotal} | last:n/a"
-            : $"tok sum:{total} p:{promptTotal} c:{completionTotal} | last:{last.TotalTokens} (p{last.PromptTokens}/c{last.CompletionTokens})";
+    internal static string BuildTokenUsageLine(string model, int promptTotal, int completionTotal, int total, TokenUsage? last)
+    {
+        string modelLabel = ShortModelLabel(model);
+        return last is null
+            ? $"m:{modelLabel} | tok sum:{total} p:{promptTotal} c:{completionTotal} | last:n/a"
+            : $"m:{modelLabel} | tok sum:{total} p:{promptTotal} c:{completionTotal} | last:{last.TotalTokens} (p{last.PromptTokens}/c{last.CompletionTokens})";
+    }
+
+    static string ShortModelLabel(string model)
+    {
+        string trimmed = (model ?? "").Trim();
+        if (trimmed.Length <= 28) return trimmed;
+        return trimmed[..18] + "..." + trimmed[^7..];
+    }
 
     sealed class TokenUsageTracker
     {
+        readonly string _model;
         int _promptTotal;
         int _completionTotal;
         int _total;
         TokenUsage? _last;
         int _renderWidth;
         bool _enabled = true;
+
+        internal TokenUsageTracker(string model)
+        {
+            _model = model;
+        }
 
         internal void Reset()
         {
@@ -420,7 +436,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
                 int height = Console.WindowHeight;
                 if (width < 20 || height < 2) return;
 
-                string text = BuildTokenUsageLine(_promptTotal, _completionTotal, _total, _last);
+                string text = BuildTokenUsageLine(_model, _promptTotal, _completionTotal, _total, _last);
                 int maxLen = Math.Max(10, width - 1);
                 if (text.Length > maxLen) text = text[..maxLen];
 

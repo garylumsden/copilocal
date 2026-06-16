@@ -25,6 +25,7 @@ internal static class Program
         var providers = new ProviderHub(proc, http);
         var installer = new ProviderInstaller(proc, http);
         var launcher = new Launcher(providers, proc);
+        var chatRunner = new LocalChatRunner(providers, http);
 
         var cli = CommandLineArgs.Parse(argv);
         // A stable session id lets us resume the same conversation with a new model.
@@ -32,13 +33,12 @@ internal static class Program
 
         AnsiConsole.WriteLine();
         Banner.Draw();
-        AnsiConsole.MarkupLine("[grey58 italic]      Pick a local model · launch GitHub Copilot CLI against it[/]\n");
-
-        EnsureCopilotCli(providers, installer, cli.Interactive);
+        AnsiConsole.MarkupLine("[grey58 italic]      Pick a local model · launch Copilot CLI or chat locally[/]\n");
 
         bool resuming = false;
         MenuItem? lastLaunched = null;   // to unload when switching models on continue
         bool liteLlmAutoStartAttempted = false;
+        bool copilotCliEnsured = false;
 
         while (true)
         {
@@ -78,6 +78,7 @@ internal static class Program
             // ----- non-interactive pick (single shot) -----
             if (cli.Pick >= 1 && cli.Pick <= models.Count)
             {
+                if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
                 var item = models[cli.Pick - 1];
                 if (!Preflight.Ok(item, cli.Interactive, providers)) return 0;
                 launcher.Launch(item, Options(cli, sessionId, resuming));
@@ -96,8 +97,8 @@ internal static class Program
                 .Title(resuming
                     ? $"Continue session [teal]{Short(sessionId)}[/] with which [teal]model[/]?  [dim](↑/↓, Enter)[/]:"
                     : includeLocalProviders
-                        ? "Select a [teal]local model[/]  [dim](↑/↓, Enter to launch)[/]:"
-                        : "Select a [teal]model[/]  [dim](↑/↓, Enter to launch)[/]:")
+                        ? "Select a [teal]local model[/]  [dim](↑/↓, Enter to choose action)[/]:"
+                        : "Select a [teal]model[/]  [dim](↑/↓, Enter to choose action)[/]:")
                 .PageSize(Math.Clamp(models.Count + emptyInstalled.Count + (liteEnabled ? 6 : 5), 5, 20))
                 .UseConverter(m => m.Display)
                 .EnableSearch();
@@ -145,9 +146,11 @@ internal static class Program
                 continue;
             }
 
-            // Preflight guard: warn (and gate) on missing tool-calling or too-small context
-            // before launch; go back to the picker unless the user chooses to launch anyway.
-            if (!Preflight.Ok(chosen, cli.Interactive, providers)) continue;
+            var launchAction = PromptLaunchAction(chosen, resuming);
+            if (launchAction == LaunchAction.BackToPicker) continue;
+            if (launchAction == LaunchAction.LaunchCopilot
+                && !Preflight.Ok(chosen, cli.Interactive, providers))
+                continue;
 
             // Continuing with a different model: unload the previous one to free its VRAM.
             if (lastLaunched is not null && (lastLaunched.Provider != chosen.Provider || lastLaunched.Model != chosen.Model))
@@ -156,6 +159,16 @@ internal static class Program
                 AnsiConsole.Status().Start($"Unloading {prev.Model}...", _ => providers.Unload(prev));
                 AnsiConsole.MarkupLine($"[dim]Unloaded previous model {Markup.Escape(prev.Provider)} / {Markup.Escape(prev.Model)}.[/]");
             }
+
+            if (launchAction == LaunchAction.ChatOnly)
+            {
+                bool chatCompleted = chatRunner.Run(chosen);
+                if (!chatCompleted) continue;
+                lastLaunched = chosen;
+                continue;
+            }
+
+            if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
 
             bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
 
@@ -224,6 +237,34 @@ internal static class Program
     }
 
     internal static string Short(string? id) => id is { Length: >= 8 } ? id[..8] : id ?? "";
+
+    enum LaunchAction
+    {
+        LaunchCopilot,
+        ChatOnly,
+        BackToPicker,
+    }
+
+    sealed record LaunchActionChoice(LaunchAction Action, string Label);
+
+    static LaunchAction PromptLaunchAction(MenuItem chosen, bool resuming)
+    {
+        string copilotLabel = resuming
+            ? "▶  Launch GitHub Copilot CLI (continue session)"
+            : "▶  Launch GitHub Copilot CLI";
+        var choices = new[]
+        {
+            new LaunchActionChoice(LaunchAction.LaunchCopilot, copilotLabel),
+            new LaunchActionChoice(LaunchAction.ChatOnly, "💬  Chat-only mode (local model, no tools)"),
+            new LaunchActionChoice(LaunchAction.BackToPicker, "↩  Back to model picker"),
+        };
+        var prompt = new SelectionPrompt<LaunchActionChoice>()
+            .Title($"Run [teal]{Markup.Escape(chosen.Provider)}[/] / [teal]{Markup.Escape(chosen.Model)}[/] as:")
+            .UseConverter(choice => choice.Label)
+            .PageSize(4);
+        prompt.AddChoices(choices);
+        return AnsiConsole.Prompt(prompt).Action;
+    }
 
     // ---------------- per-provider model help ----------------
 

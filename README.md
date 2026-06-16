@@ -84,9 +84,14 @@ to install local runtimes (Ollama / Foundry Local / LM Studio), or enable LiteLL
 When setting up LiteLLM, copilocal can import all currently discovered local-provider
 models into the LiteLLM config in one step.
 
-Pick a model with **↑/↓** and **Enter**. copilocal starts the provider if needed, warms
-the model up, sets the BYOK env vars, and launches `copilot` against it. When Copilot
-exits you can pick a **different model to continue the same session**, or **Exit**.
+Pick a model with **↑/↓** and **Enter**, then choose how to run it:
+- **Launch GitHub Copilot CLI** (current behavior)
+- **Chat-only mode** (local model chat loop; no tool execution)
+- **Back to picker**
+
+For Copilot launch mode, copilocal starts the provider if needed, warms the model up,
+sets BYOK env vars, and launches `copilot`. When Copilot exits you can pick a **different
+model to continue the same session**, or **Exit**.
 
 ## Why
 
@@ -148,7 +153,7 @@ and put it on your `PATH`:
 ## Usage
 
 ```powershell
-copilocal                      # interactive picker -> air-gap prompt -> launches copilot
+copilocal                      # interactive picker -> choose Copilot launch or chat-only mode
 copilocal -- --resume          # everything after -- is forwarded to copilot
 copilocal --name "my feature"  # name the managed session (resume it later by name)
 copilocal --pick 1             # non-interactive: pick model #1
@@ -167,6 +172,17 @@ copilocal --dry-run            # show what it would set, don't launch
 > air-gapped (default **No**). Choosing yes sets `COPILOT_OFFLINE=true`, so Copilot CLI
 > never contacts GitHub's servers and disables telemetry. Pass `--offline` to default
 > the prompt to yes (or to enable it directly on the `--pick` path).
+
+### Chat-only mode
+
+Choose **Chat-only mode** after selecting a model to stay inside copilocal and chat
+directly with that provider endpoint (no GitHub Copilot CLI launch, no tool execution).
+
+Commands inside chat:
+- `/help` show commands
+- `/clear` reset conversation history
+- `/multi` compose multiline input (finish with `/send`, cancel with `/cancel`)
+- `/exit` return to model picker
 
 ### How models are discovered
 

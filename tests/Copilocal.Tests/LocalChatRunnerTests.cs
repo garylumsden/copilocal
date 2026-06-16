@@ -18,13 +18,13 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void BuildChatPayload_EncodesModelAndMessages()
     {
-        var messages = new List<LocalChatRunner.ChatMessage>
+        var messages = new List<ChatMessage>
         {
             new("system", "You are a helper."),
             new("user", "Hello \"world\""),
         };
 
-        string payload = LocalChatRunner.BuildChatPayload("qwen/test", messages);
+        string payload = ChatProtocol.BuildChatPayload("qwen/test", messages);
         using var doc = JsonDocument.Parse(payload);
         var root = doc.RootElement;
 
@@ -43,9 +43,9 @@ public sealed class LocalChatRunnerTests
             {"choices":[{"message":{"content":"Ready to code."}}]}
             """;
 
-        var result = LocalChatRunner.ParseAssistantReply(body);
+        var result = ChatProtocol.ParseAssistantReply(body);
 
-        result.Status.Should().Be(LocalChatRunner.ReplyStatus.Ok);
+        result.Status.Should().Be(ReplyStatus.Ok);
         result.Content.Should().Be("Ready to code.");
     }
 
@@ -56,9 +56,9 @@ public sealed class LocalChatRunnerTests
             {"choices":[{"message":{"content":[{"type":"text","text":"Line one."},{"type":"text","text":"Line two."}]}}]}
             """;
 
-        var result = LocalChatRunner.ParseAssistantReply(body);
+        var result = ChatProtocol.ParseAssistantReply(body);
 
-        result.Status.Should().Be(LocalChatRunner.ReplyStatus.Ok);
+        result.Status.Should().Be(ReplyStatus.Ok);
         result.Content.Should().Be("Line one.\nLine two.");
     }
 
@@ -69,9 +69,9 @@ public sealed class LocalChatRunnerTests
             {"choices":[{"message":{"content":"","reasoning":"thinking..."}}]}
             """;
 
-        var result = LocalChatRunner.ParseAssistantReply(body);
+        var result = ChatProtocol.ParseAssistantReply(body);
 
-        result.Status.Should().Be(LocalChatRunner.ReplyStatus.ReasoningOnly);
+        result.Status.Should().Be(ReplyStatus.ReasoningOnly);
         result.Detail.Should().Contain("thinking");
     }
 
@@ -82,25 +82,25 @@ public sealed class LocalChatRunnerTests
             {"choices":[{"message":{"tool_calls":[{"function":{"name":"list_files"}}]}}]}
             """;
 
-        var result = LocalChatRunner.ParseAssistantReply(body);
+        var result = ChatProtocol.ParseAssistantReply(body);
 
-        result.Status.Should().Be(LocalChatRunner.ReplyStatus.ToolCallOnly);
+        result.Status.Should().Be(ReplyStatus.ToolCallOnly);
         result.Detail.Should().Contain("list_files");
     }
 
     [TestMethod]
     public void ParseAssistantReply_WrongShapeOrMalformed_ReturnsInvalid()
     {
-        LocalChatRunner.ParseAssistantReply("""{"choices":[]}""").Status
-            .Should().Be(LocalChatRunner.ReplyStatus.Invalid);
-        LocalChatRunner.ParseAssistantReply("{ not json").Status
-            .Should().Be(LocalChatRunner.ReplyStatus.Invalid);
+        ChatProtocol.ParseAssistantReply("""{"choices":[]}""").Status
+            .Should().Be(ReplyStatus.Invalid);
+        ChatProtocol.ParseAssistantReply("{ not json").Status
+            .Should().Be(ReplyStatus.Invalid);
     }
 
     [TestMethod]
     public void ParseUsage_WithAllTokenFields_ReturnsUsage()
     {
-        var usage = LocalChatRunner.ParseUsage("""{"usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165}}""");
+        var usage = ChatProtocol.ParseUsage("""{"usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165}}""");
 
         usage.Should().NotBeNull();
         usage!.PromptTokens.Should().Be(120);
@@ -111,7 +111,7 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void ParseUsage_WithoutTotal_ComputesTotal()
     {
-        var usage = LocalChatRunner.ParseUsage("""{"usage":{"prompt_tokens":10,"completion_tokens":15}}""");
+        var usage = ChatProtocol.ParseUsage("""{"usage":{"prompt_tokens":10,"completion_tokens":15}}""");
 
         usage.Should().NotBeNull();
         usage!.TotalTokens.Should().Be(25);
@@ -120,26 +120,26 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void ParseUsage_MissingOrMalformedUsage_ReturnsNull()
     {
-        LocalChatRunner.ParseUsage("""{"choices":[{"message":{"content":"ok"}}]}""").Should().BeNull();
-        LocalChatRunner.ParseUsage("""{"usage":"oops"}""").Should().BeNull();
-        LocalChatRunner.ParseUsage("{ not json").Should().BeNull();
+        ChatProtocol.ParseUsage("""{"choices":[{"message":{"content":"ok"}}]}""").Should().BeNull();
+        ChatProtocol.ParseUsage("""{"usage":"oops"}""").Should().BeNull();
+        ChatProtocol.ParseUsage("{ not json").Should().BeNull();
     }
 
     [TestMethod]
     public void BuildTokenUsageLine_FormatsWithAndWithoutLastUsage()
     {
-        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, null)
+        TokenUsageTracker.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, null)
             .Should().Contain("m:qwen2.5-coder:7b")
             .And.Contain("last:n/a");
 
-        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, new LocalChatRunner.TokenUsage(10, 5, 15))
+        TokenUsageTracker.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, new TokenUsage(10, 5, 15))
             .Should().Contain("last:15 (p10/c5)");
     }
 
     [TestMethod]
     public void BuildTokenUsageRenderText_ReservesFinalConsoleColumn()
     {
-        var rendered = LocalChatRunner.BuildTokenUsageRenderText(new string('x', 80), 40);
+        var rendered = TokenUsageTracker.BuildTokenUsageRenderText(new string('x', 80), 40);
 
         rendered.Text.Should().HaveLength(38);
         rendered.Left.Should().Be(1);
@@ -149,36 +149,36 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void AutocompleteChatCommand_UniquePrefix_ResolvesCommand()
     {
-        var result = LocalChatRunner.AutocompleteChatCommand("/h");
+        var result = ChatCommandRouter.AutocompleteChatCommand("/h");
 
-        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Resolved);
+        result.Kind.Should().Be(ChatCommandRouter.CommandAutocompleteKind.Resolved);
         result.Command.Should().Be("/help");
     }
 
     [TestMethod]
     public void AutocompleteChatCommand_SlashOnly_ReturnsCommandChoices()
     {
-        var result = LocalChatRunner.AutocompleteChatCommand("/");
+        var result = ChatCommandRouter.AutocompleteChatCommand("/");
 
-        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Ambiguous);
+        result.Kind.Should().Be(ChatCommandRouter.CommandAutocompleteKind.Ambiguous);
         result.Matches.Should().Contain(new[] { "/help", "/clear", "/multi", "/exit", "/quit" });
     }
 
     [TestMethod]
     public void AutocompleteChatCommand_QuitAlias_NormalizesToExit()
     {
-        var result = LocalChatRunner.AutocompleteChatCommand("/quit");
+        var result = ChatCommandRouter.AutocompleteChatCommand("/quit");
 
-        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Resolved);
+        result.Kind.Should().Be(ChatCommandRouter.CommandAutocompleteKind.Resolved);
         result.Command.Should().Be("/exit");
     }
 
     [TestMethod]
     public void AutocompleteChatCommand_UnknownSlash_ReturnsUnknown()
     {
-        var result = LocalChatRunner.AutocompleteChatCommand("/doesnotexist");
+        var result = ChatCommandRouter.AutocompleteChatCommand("/doesnotexist");
 
-        result.Kind.Should().Be(LocalChatRunner.CommandAutocompleteKind.Unknown);
+        result.Kind.Should().Be(ChatCommandRouter.CommandAutocompleteKind.Unknown);
     }
 
     [TestMethod]
@@ -195,7 +195,7 @@ public sealed class LocalChatRunnerTests
             Outro line
             """;
 
-        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(content, out var table);
+        bool ok = ChatMarkdownRenderer.TryExtractFirstMarkdownTable(content, out var table);
 
         ok.Should().BeTrue();
         table.Headers.Should().Equal("Model", "Tokens");
@@ -211,7 +211,7 @@ public sealed class LocalChatRunnerTests
             | List[int] | arr[0] | Optional[str] |
             """;
 
-        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(content, out var table);
+        bool ok = ChatMarkdownRenderer.TryExtractFirstMarkdownTable(content, out var table);
 
         ok.Should().BeTrue();
         table.Rows.Should().ContainSingle()
@@ -226,7 +226,7 @@ public sealed class LocalChatRunnerTests
             | --- | --- |
             """;
 
-        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(markdown, out _);
+        bool ok = ChatMarkdownRenderer.TryExtractFirstMarkdownTable(markdown, out _);
 
         ok.Should().BeFalse();
     }
@@ -234,7 +234,7 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void RenderMarkdownLine_RendersBoldCodeAndMarkdownLink()
     {
-        string rendered = LocalChatRunner.RenderMarkdownLine("Use **bold** and `code` and [docs](https://example.com).");
+        string rendered = ChatMarkdownRenderer.RenderMarkdownLine("Use **bold** and `code` and [docs](https://example.com).");
 
         rendered.Should().Contain("[bold]bold[/]");
         rendered.Should().Contain("[grey70]code[/]");
@@ -244,7 +244,7 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void RenderMarkdownLine_PreservesBracketsInLinkLabel()
     {
-        string rendered = LocalChatRunner.RenderMarkdownLine("[a[b]](https://x)");
+        string rendered = ChatMarkdownRenderer.RenderMarkdownLine("[a[b]](https://x)");
 
         rendered.Should().Contain("[link=https://x]a[[b]][/]");
     }
@@ -252,8 +252,8 @@ public sealed class LocalChatRunnerTests
     [TestMethod]
     public void RenderMarkdownLine_HeadingAndBareUrl_AreRendered()
     {
-        string heading = LocalChatRunner.RenderMarkdownLine("## Quick start");
-        string url = LocalChatRunner.RenderMarkdownLine("See https://example.com/docs.");
+        string heading = ChatMarkdownRenderer.RenderMarkdownLine("## Quick start");
+        string url = ChatMarkdownRenderer.RenderMarkdownLine("See https://example.com/docs.");
 
         heading.Should().Contain("[bold]Quick start[/]");
         url.Should().Contain("[link=https://example.com/docs]https://example.com/docs[/]");

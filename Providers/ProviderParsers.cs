@@ -1,10 +1,8 @@
 using System.Text.Json;
 
-using Copilocal.Launch;
-
 namespace Copilocal.Providers;
 
-internal sealed partial class ProviderHub
+internal static class ProviderParsers
 {
     internal static IEnumerable<string> ParseLiteLlmModels(string json)
     {
@@ -28,88 +26,6 @@ internal sealed partial class ProviderHub
                 yield return id;
             }
         }
-    }
-
-    List<MenuItem> GatherFoundry()
-    {
-        var items = new List<MenuItem>();
-        if (!HasFoundry) return items;
-        var (code, outp, _) = proc.Run(FoundryExe, "cache list -o json", DiscoverTimeoutMs);
-        if (code != 0) return items;
-        foreach (var (id, loadId, tools) in ParseFoundry(outp))
-            items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "Foundry", BaseUrl = null, Model = id, LoadAlias = loadId, Tools = tools });
-        return items;
-    }
-
-    List<MenuItem> GatherLmStudio()
-    {
-        var items = new List<MenuItem>();
-        if (!File.Exists(LmsExe)) return items;
-        var (code, outp, _) = proc.Run(LmsExe, "ls --json", DiscoverTimeoutMs);
-        if (code != 0) return items;
-        foreach (var id in ParseLmStudio(outp))
-            items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "LM Studio", BaseUrl = "http://localhost:1234/v1", Model = id, Tools = true });
-        return items;
-    }
-
-    List<MenuItem> GatherLiteLlm()
-    {
-        var items = new List<MenuItem>();
-        var cfg = LaunchConfig.Load();
-        if (!cfg.LiteLlmEnabled) return items;
-        string baseUrl = LaunchConfig.NormalizeBaseUrl(cfg.LiteLlmBaseUrl);
-        string apiKey = ResolveLiteLlmApiKey(cfg);
-        const int maxAttempts = 5;
-        const int attemptTimeoutMs = 1_200;
-        const int retryDelayMs = 500;
-
-        for (int attempt = 1; attempt <= maxAttempts; attempt++)
-        {
-            try
-            {
-                string body = http.GetString($"{baseUrl}/models", attemptTimeoutMs, apiKey);
-                foreach (var id in ParseLiteLlmModels(body))
-                    items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "LiteLLM", BaseUrl = baseUrl, Model = id, Tools = true });
-                return items;
-            }
-            catch (HttpRequestException ex) when (
-                attempt < maxAttempts &&
-                ex.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
-            {
-                Thread.Sleep(retryDelayMs);
-            }
-            catch (OperationCanceledException) when (attempt < maxAttempts)
-            {
-                Thread.Sleep(retryDelayMs);
-            }
-            catch (JsonException) when (attempt < maxAttempts)
-            {
-                Thread.Sleep(retryDelayMs);
-            }
-            catch (InvalidOperationException) when (attempt < maxAttempts)
-            {
-                Thread.Sleep(retryDelayMs);
-            }
-            catch (HttpRequestException) { return items; }
-            catch (JsonException) { return items; }
-            catch (OperationCanceledException) { return items; }
-            catch (InvalidOperationException) { return items; }
-        }
-        return items;
-    }
-
-    static string ResolveLiteLlmApiKey(LaunchConfig cfg)
-    {
-        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKey))
-            return LaunchConfig.NormalizeLiteLlmApiKey(cfg.LiteLlmApiKey);
-        if (!string.IsNullOrWhiteSpace(cfg.LiteLlmApiKeyEnvVar))
-        {
-            string fromNamed = Environment.GetEnvironmentVariable(cfg.LiteLlmApiKeyEnvVar.Trim()) ?? "";
-            if (!string.IsNullOrWhiteSpace(fromNamed))
-                return LaunchConfig.NormalizeLiteLlmApiKey(fromNamed);
-        }
-        string fallback = Environment.GetEnvironmentVariable(LaunchConfig.DefaultLiteLlmApiKeyEnvVar) ?? "";
-        return LaunchConfig.NormalizeLiteLlmApiKey(fallback);
     }
 
     internal static IEnumerable<(string Id, string LoadId, bool Tools)> ParseFoundry(string json)
@@ -166,4 +82,7 @@ internal sealed partial class ProviderHub
         parent.TryGetProperty(prop, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? ""
             : "";
+
+    internal static int NumOrZero(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : 0;
 }

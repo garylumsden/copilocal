@@ -2,39 +2,16 @@ using Copilocal.Launch;
 
 namespace Copilocal.Providers;
 
-internal sealed partial class ProviderInstaller
+internal static class LiteLlmConfigStore
 {
-    internal (bool Ok, int Discovered, int Added, int Existing, int Skipped) AddMissingLiteLlmLocalModels(
-        string mode,
-        IEnumerable<MenuItem> localModels)
-    {
-        if (!EnsureLiteLlmScaffold()) return (false, 0, 0, 0, 0);
-        string normalizedMode = NormalizeLiteLlmMode(mode);
+    const string DockerHostAlias = "host.docker.internal";
+    const string OllamaDefaultBaseUrl = "http://localhost:11434/v1";
+    const string LmStudioDefaultBaseUrl = "http://localhost:1234/v1";
+    const string FoundryDefaultBaseUrl = "http://127.0.0.1:5273/v1";
 
-        var mapped = new Dictionary<string, LiteLlmModelEntry>(StringComparer.Ordinal);
-        int skipped = 0;
-        foreach (var item in localModels)
-        {
-            if (item.Kind != MenuItemKind.Model) continue;
-            var entry = ToLiteLlmModelEntry(item, normalizedMode);
-            if (entry is null) { skipped++; continue; }
-            mapped[entry.ModelName] = entry;
-        }
+    internal sealed record LiteLlmModelEntry(string ModelName, string Model, string ApiBase, string? ApiKey);
 
-        if (mapped.Count == 0) return (true, 0, 0, 0, skipped);
-
-        string path = normalizedMode == LiteLlmModePython
-            ? LiteLlmPythonConfigPath
-            : LiteLlmDockerConfigPath;
-        if (normalizedMode == LiteLlmModeDocker && !RewriteLoopbackApiBasesForDocker(path))
-            return (false, mapped.Count, 0, 0, skipped);
-        if (!MergeLiteLlmModelConfig(path, mapped.Values.ToList(), out int added, out int existing))
-            return (false, mapped.Count, 0, 0, skipped);
-
-        return (true, mapped.Count, added, existing, skipped);
-    }
-
-    static LiteLlmModelEntry? ToLiteLlmModelEntry(MenuItem item, string mode)
+    internal static LiteLlmModelEntry? ToLiteLlmModelEntry(MenuItem item, string mode)
     {
         string model = item.Model.Trim();
         if (model.Length == 0) return null;
@@ -60,7 +37,7 @@ internal sealed partial class ProviderInstaller
         };
     }
 
-    static string TrimOpenAiSuffix(string baseUrl)
+    internal static string TrimOpenAiSuffix(string baseUrl)
     {
         string normalized = LaunchConfig.NormalizeBaseUrl(baseUrl);
         return normalized.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
@@ -68,12 +45,12 @@ internal sealed partial class ProviderInstaller
             : normalized;
     }
 
-    static string NormalizeApiBaseForMode(string apiBase, string mode) =>
-        NormalizeLiteLlmMode(mode) == LiteLlmModeDocker
+    internal static string NormalizeApiBaseForMode(string apiBase, string mode) =>
+        string.Equals(mode, ProviderInstaller.LiteLlmModeDocker, StringComparison.OrdinalIgnoreCase)
             ? RewriteLoopbackHost(apiBase)
             : apiBase;
 
-    static bool RewriteLoopbackApiBasesForDocker(string path)
+    internal static bool RewriteLoopbackApiBasesForDocker(string path)
     {
         try
         {
@@ -94,19 +71,19 @@ internal sealed partial class ProviderInstaller
         }
     }
 
-    static string RewriteLoopbackHost(string text) =>
+    internal static string RewriteLoopbackHost(string text) =>
         (text ?? "")
             .Replace("http://localhost:", $"http://{DockerHostAlias}:", StringComparison.OrdinalIgnoreCase)
             .Replace("http://127.0.0.1:", $"http://{DockerHostAlias}:", StringComparison.OrdinalIgnoreCase)
             .Replace("http://localhost/", $"http://{DockerHostAlias}/", StringComparison.OrdinalIgnoreCase)
             .Replace("http://127.0.0.1/", $"http://{DockerHostAlias}/", StringComparison.OrdinalIgnoreCase);
 
-    static bool EnsureDockerHostGatewayAliasInCompose()
+    internal static bool EnsureDockerHostGatewayAliasInCompose(string liteLlmComposePath)
     {
         try
         {
-            if (!File.Exists(LiteLlmComposePath)) return false;
-            string current = File.ReadAllText(LiteLlmComposePath);
+            if (!File.Exists(liteLlmComposePath)) return false;
+            string current = File.ReadAllText(liteLlmComposePath);
             if (current.Contains("host.docker.internal:host-gateway", StringComparison.OrdinalIgnoreCase))
                 return true;
 
@@ -130,7 +107,7 @@ internal sealed partial class ProviderInstaller
             if (string.Equals(current, updated, StringComparison.Ordinal))
                 return false;
 
-            File.WriteAllText(LiteLlmComposePath, updated);
+            File.WriteAllText(liteLlmComposePath, updated);
             return true;
         }
         catch (IOException)
@@ -143,7 +120,7 @@ internal sealed partial class ProviderInstaller
         }
     }
 
-    static bool MergeLiteLlmModelConfig(
+    internal static bool MergeLiteLlmModelConfig(
         string path,
         IReadOnlyList<LiteLlmModelEntry> candidates,
         out int added,
@@ -198,7 +175,7 @@ internal sealed partial class ProviderInstaller
         }
     }
 
-    static HashSet<string> ParseModelNames(string modelSection)
+    internal static HashSet<string> ParseModelNames(string modelSection)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var raw in modelSection.Split('\n'))
@@ -216,7 +193,7 @@ internal sealed partial class ProviderInstaller
         return names;
     }
 
-    static string RenderLiteLlmEntry(LiteLlmModelEntry entry)
+    internal static string RenderLiteLlmEntry(LiteLlmModelEntry entry)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"  - model_name: \"{YamlEscape(entry.ModelName)}\"");
@@ -228,16 +205,16 @@ internal sealed partial class ProviderInstaller
         return sb.ToString();
     }
 
-    static string YamlEscape(string value) =>
+    internal static string YamlEscape(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 
-    static void WriteIfMissing(string path, string content)
+    internal static void WriteIfMissing(string path, string content)
     {
         if (!File.Exists(path))
             File.WriteAllText(path, content);
     }
 
-    static string DockerComposeTemplate() =>
+    internal static string DockerComposeTemplate() =>
         """
         services:
           db:
@@ -269,7 +246,7 @@ internal sealed partial class ProviderInstaller
           litellm_pgdata:
         """;
 
-    static string DockerConfigTemplate() =>
+    internal static string DockerConfigTemplate() =>
         """
         model_list: []
         general_settings:
@@ -277,9 +254,9 @@ internal sealed partial class ProviderInstaller
           database_url: os.environ/LITELLM_DATABASE_URL
         """;
 
-    static string PythonConfigTemplate()
+    internal static string PythonConfigTemplate(string liteLlmDir)
     {
-        string sqlite = Path.Join(LiteLlmDir, "litellm.db").Replace("\\", "/");
+        string sqlite = Path.Join(liteLlmDir, "litellm.db").Replace("\\", "/");
         return
             "model_list: []\n" +
             "general_settings:\n" +
@@ -287,7 +264,7 @@ internal sealed partial class ProviderInstaller
             $"  database_url: sqlite:///{sqlite}\n";
     }
 
-    static string DefaultDockerEnvTemplate() =>
+    internal static string DefaultDockerEnvTemplate() =>
         """
         LITELLM_MASTER_KEY=
         LITELLM_SALT_KEY=sk-local-dev-salt

@@ -757,7 +757,7 @@ public sealed class ProviderInstallerTests
             }
             """;
 
-        var result = ProviderHub.ParseFoundry(json).ToList();
+        var result = ProviderParsers.ParseFoundry(json).ToList();
 
         result.Should().ContainSingle();
         result[0].Id.Should().Be("Good model");
@@ -776,7 +776,7 @@ public sealed class ProviderInstallerTests
             ]
             """;
 
-        ProviderHub.ParseLmStudio(json).ToList().Should().Equal(["good-model"]);
+        ProviderParsers.ParseLmStudio(json).ToList().Should().Equal(["good-model"]);
     }
 
     [TestMethod]

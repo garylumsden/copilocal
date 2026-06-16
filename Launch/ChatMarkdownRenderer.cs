@@ -11,9 +11,15 @@ using Spectre.Console;
 
 namespace Copilocal.Launch;
 
-internal sealed partial class LocalChatRunner
+internal static class ChatMarkdownRenderer
 {
-    static void RenderAssistantContent(string content)
+    static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    // Plain interpreted Regex (no RegexOptions.Compiled) is AOT-safe with no IL3050 warning,
+    // and avoids the `partial` the GeneratedRegex source generator would require.
+    static readonly Regex BareUrlRegex = new(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase);
+
+    internal static void RenderAssistantContent(string content)
     {
         AnsiConsole.MarkupLine("[springgreen3]assistant>[/]");
         var doc = Markdown.Parse(content ?? "", ChatMarkdownPipeline);
@@ -341,7 +347,7 @@ internal sealed partial class LocalChatRunner
         if (string.IsNullOrEmpty(literal)) return "";
         var sb = new StringBuilder();
         int cursor = 0;
-        foreach (Match match in BareUrlRegex().Matches(literal))
+        foreach (Match match in BareUrlRegex.Matches(literal))
         {
             if (!match.Success || match.Index < cursor) continue;
             sb.Append(Markup.Escape(literal[cursor..match.Index]));

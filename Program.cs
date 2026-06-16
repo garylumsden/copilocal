@@ -38,156 +38,186 @@ internal static class Program
         bool copilotCliEnsured = false;
         bool animateBanner = true;
 
-        while (true)
+        try
         {
-            DrawPickerHeader(animateBanner);
-            animateBanner = false;
-
-            var launchCfg = LaunchConfig.Load();
-            bool liteEnabled = launchCfg.LiteLlmEnabled;
-            bool includeLocalProviders = !(liteEnabled && launchCfg.HideLocalProvidersWhenLiteLlm);
-
-            AnsiConsole.MarkupLine(includeLocalProviders
-                ? "[grey58]Discovering local models…[/]"
-                : "[grey58]Discovering models…[/]");
-            var models = providers.GatherModels(includeLocalProviders, liteEnabled, (name, count) =>
-                AnsiConsole.MarkupLine(count < 0
-                    ? $"  [yellow]…[/] {Markup.Escape(name)} [grey58]— still warming up, skipped (try again)[/]"
-                    : count > 0
-                        ? $"  [green]✓[/] {Markup.Escape(name)} [grey58]— {count} model{(count == 1 ? "" : "s")}[/]"
-                        : $"  [grey46]·[/] {Markup.Escape(name)} [grey58]— no models[/]"));
-            AnsiConsole.WriteLine();
-
-            if (cli.Interactive
-                && ShouldAutoStartLiteLlm(launchCfg, models, installer)
-                && !liteLlmAutoStartAttempted)
+            while (true)
             {
-                liteLlmAutoStartAttempted = true;
-                var start = AnsiConsole.Status().Start("LiteLLM enabled but unreachable; starting runtime...", _ =>
-                    installer.StartLiteLlmWithDetail(launchCfg));
-                if (start.Ok)
+                DrawPickerHeader(animateBanner);
+                animateBanner = false;
+
+                var launchCfg = LaunchConfig.Load();
+                bool liteEnabled = launchCfg.LiteLlmEnabled;
+                bool includeLocalProviders = !(liteEnabled && launchCfg.HideLocalProvidersWhenLiteLlm);
+
+                AnsiConsole.MarkupLine(includeLocalProviders
+                    ? "[grey58]Discovering local models…[/]"
+                    : "[grey58]Discovering models…[/]");
+                var models = providers.GatherModels(includeLocalProviders, liteEnabled, (name, count) =>
+                    AnsiConsole.MarkupLine(count < 0
+                        ? $"  [yellow]…[/] {Markup.Escape(name)} [grey58]— still warming up, skipped (try again)[/]"
+                        : count > 0
+                            ? $"  [green]✓[/] {Markup.Escape(name)} [grey58]— {count} model{(count == 1 ? "" : "s")}[/]"
+                            : $"  [grey46]·[/] {Markup.Escape(name)} [grey58]— no models[/]"));
+                AnsiConsole.WriteLine();
+
+                if (cli.Pick >= 1 && cli.Pick > models.Count)
                 {
-                    AnsiConsole.MarkupLine("[green]✓[/] LiteLLM auto-started.");
-                    continue;   // re-discover models immediately
+                    AnsiConsole.MarkupLine($"[red]--pick {cli.Pick} is out of range[/]; valid range is 1..{models.Count}");
+                    if (models.Count == 0)
+                    {
+                        AnsiConsole.MarkupLine("[grey58]No models discovered.[/]");
+                    }
+                    else
+                    {
+                        AnsiConsole.MarkupLine("[grey58]Discovered models:[/]");
+                        for (int i = 0; i < models.Count; i++)
+                        {
+                            var model = models[i];
+                            AnsiConsole.MarkupLine($"  [white]{i + 1}[/]. [teal]{Markup.Escape(model.Provider)}[/] / {Markup.Escape(model.Model)}");
+                        }
+                    }
+                    return 1;
                 }
-                AnsiConsole.MarkupLine($"[yellow]·[/] LiteLLM auto-start failed: [dim]{Markup.Escape(start.Detail)}[/]");
-            }
 
-            var missing = MissingProviders(providers, launchCfg, includeLocalProviders);
-            var emptyInstalled = EmptyInstalledProviders(models, providers, launchCfg, includeLocalProviders);
+                if (cli.Interactive
+                    && ShouldAutoStartLiteLlm(launchCfg, models, installer)
+                    && !liteLlmAutoStartAttempted)
+                {
+                    liteLlmAutoStartAttempted = true;
+                    var start = AnsiConsole.Status().Start("LiteLLM enabled but unreachable; starting runtime...", _ =>
+                        installer.StartLiteLlmWithDetail(launchCfg));
+                    if (start.Ok)
+                    {
+                        AnsiConsole.MarkupLine("[green]✓[/] LiteLLM auto-started.");
+                        continue;   // re-discover models immediately
+                    }
+                    AnsiConsole.MarkupLine($"[yellow]·[/] LiteLLM auto-start failed: [dim]{Markup.Escape(start.Detail)}[/]");
+                }
 
-            // ----- non-interactive pick (single shot) -----
-            if (cli.Pick >= 1 && cli.Pick <= models.Count)
-            {
+                var missing = MissingProviders(providers, launchCfg, includeLocalProviders);
+                var emptyInstalled = EmptyInstalledProviders(models, providers, launchCfg, includeLocalProviders);
+
+                // ----- non-interactive pick (single shot) -----
+                if (cli.Pick >= 1 && cli.Pick <= models.Count)
+                {
+                    if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
+                    var item = models[cli.Pick - 1];
+                    if (!Preflight.Ok(item, cli.Interactive, providers)) return 0;
+                    launcher.Launch(item, Options(cli, sessionId, resuming));
+                    return launcher.LastExitCode;
+                }
+
+                // ----- build main menu -----
+                string installRow = missing.Count > 0
+                    ? $"⚙  Install provider: {string.Join(", ", missing.Select(p => p.Name))}"
+                    : "⚙  Install / manage providers";
+                const string configRow = "⚙  Configure launch options";
+                const string manageLiteLlmRow = "⚙  Manage LiteLLM runtime";
+                string quitRow = resuming ? "✖  Exit" : "✖  Quit";
+
+                var prompt = new SelectionPrompt<MenuItem>()
+                    .Title(resuming
+                        ? $"Continue session [teal]{Short(sessionId)}[/] with which [teal]model[/]?  [dim](↑/↓, Enter)[/]:"
+                        : includeLocalProviders
+                            ? "Select a [teal]local model[/]  [dim](↑/↓, Enter to choose action)[/]:"
+                            : "Select a [teal]model[/]  [dim](↑/↓, Enter to choose action)[/]:")
+                    .PageSize(Math.Clamp(models.Count + emptyInstalled.Count + (liteEnabled ? 6 : 5), 5, 20))
+                    .UseConverter(m => m.Display)
+                    .EnableSearch();
+
+                foreach (var grp in models.GroupBy(m => m.Provider))
+                    prompt.AddChoiceGroup(
+                        new MenuItem { Kind = MenuItemKind.Header, Provider = grp.Key, Model = grp.Key },
+                        grp);
+
+                var control = new List<MenuItem>();
+                // Installed providers with zero models: offer to show how to add one.
+                foreach (var info in emptyInstalled)
+                    control.Add(new MenuItem { Kind = MenuItemKind.ModelHelp, Provider = info.Key, Model = $"📥  {info.Name}: no models — how to add one" });
+                control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Configure, Model = configRow, Provider = "" });
+                if (liteEnabled)
+                    control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.ManageLiteLlm, Model = manageLiteLlmRow, Provider = "" });
+                if (missing.Count > 0)
+                    control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Install, Model = installRow, Provider = "" });
+                control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Quit, Model = quitRow, Provider = "" });
+                prompt.AddChoices(control);
+
+                var chosen = AnsiConsole.Prompt(prompt);
+
+                if (chosen.Kind == MenuItemKind.ModelHelp)
+                {
+                    ShowModelHelp(ProviderInfo.ByKey(chosen.Provider));
+                    continue;
+                }
+                if (chosen.Kind == MenuItemKind.Control)
+                {
+                    switch (chosen.ControlAction)
+                    {
+                        case ControlAction.Quit:
+                            return 0;
+                        case ControlAction.Configure:
+                            LaunchOptionsPage.Show(providers);
+                            break;
+                        case ControlAction.ManageLiteLlm:
+                            InstallFlow.ManageLiteLlm(installer, providers);
+                            break;
+                        case ControlAction.Install:
+                            InstallFlow.Run(missing, installer, providers);
+                            break;
+                    }
+                    continue;
+                }
+
+                var launchAction = PromptLaunchAction(chosen, resuming);
+                if (launchAction == LaunchAction.BackToPicker) continue;
+                if (launchAction == LaunchAction.LaunchCopilot
+                    && !Preflight.Ok(chosen, cli.Interactive, providers))
+                    continue;
+
+                // Continuing with a different model: unload the previous one to free its VRAM.
+                if (lastLaunched is not null && (lastLaunched.Provider != chosen.Provider || lastLaunched.Model != chosen.Model))
+                {
+                    var prev = lastLaunched;
+                    AnsiConsole.Status().Start($"Unloading {prev.Model}...", _ => providers.Unload(prev));
+                    AnsiConsole.MarkupLine($"[dim]Unloaded previous model {Markup.Escape(prev.Provider)} / {Markup.Escape(prev.Model)}.[/]");
+                }
+
+                if (launchAction == LaunchAction.ChatOnly)
+                {
+                    bool chatCompleted = chatRunner.Run(chosen);
+                    if (!chatCompleted) continue;
+                    lastLaunched = chosen;
+                    continue;
+                }
+
                 if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
-                var item = models[cli.Pick - 1];
-                if (!Preflight.Ok(item, cli.Interactive, providers)) return 0;
-                launcher.Launch(item, Options(cli, sessionId, resuming));
-                return launcher.LastExitCode;
-            }
 
-            // ----- build main menu -----
-            string installRow = missing.Count > 0
-                ? $"⚙  Install provider: {string.Join(", ", missing.Select(p => p.Name))}"
-                : "⚙  Install / manage providers";
-            const string configRow = "⚙  Configure launch options";
-            const string manageLiteLlmRow = "⚙  Manage LiteLLM runtime";
-            string quitRow = resuming ? "✖  Exit" : "✖  Quit";
+                bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
 
-            var prompt = new SelectionPrompt<MenuItem>()
-                .Title(resuming
-                    ? $"Continue session [teal]{Short(sessionId)}[/] with which [teal]model[/]?  [dim](↑/↓, Enter)[/]:"
-                    : includeLocalProviders
-                        ? "Select a [teal]local model[/]  [dim](↑/↓, Enter to choose action)[/]:"
-                        : "Select a [teal]model[/]  [dim](↑/↓, Enter to choose action)[/]:")
-                .PageSize(Math.Clamp(models.Count + emptyInstalled.Count + (liteEnabled ? 6 : 5), 5, 20))
-                .UseConverter(m => m.Display)
-                .EnableSearch();
-
-            foreach (var grp in models.GroupBy(m => m.Provider))
-                prompt.AddChoiceGroup(
-                    new MenuItem { Kind = MenuItemKind.Header, Provider = grp.Key, Model = grp.Key },
-                    grp);
-
-            var control = new List<MenuItem>();
-            // Installed providers with zero models: offer to show how to add one.
-            foreach (var info in emptyInstalled)
-                control.Add(new MenuItem { Kind = MenuItemKind.ModelHelp, Provider = info.Key, Model = $"📥  {info.Name}: no models — how to add one" });
-            control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Configure, Model = configRow, Provider = "" });
-            if (liteEnabled)
-                control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.ManageLiteLlm, Model = manageLiteLlmRow, Provider = "" });
-            if (missing.Count > 0)
-                control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Install, Model = installRow, Provider = "" });
-            control.Add(new MenuItem { Kind = MenuItemKind.Control, ControlAction = ControlAction.Quit, Model = quitRow, Provider = "" });
-            prompt.AddChoices(control);
-
-            var chosen = AnsiConsole.Prompt(prompt);
-
-            if (chosen.Kind == MenuItemKind.ModelHelp)
-            {
-                ShowModelHelp(ProviderInfo.ByKey(chosen.Provider));
-                continue;
-            }
-            if (chosen.Kind == MenuItemKind.Control)
-            {
-                switch (chosen.ControlAction)
+                // Dry-run ends immediately. If launch was declined/failed in interactive mode,
+                // return to the picker so the user can choose another model.
+                if (cli.DryRun) return 0;
+                if (!launched)
                 {
-                    case ControlAction.Quit:
-                        return 0;
-                    case ControlAction.Configure:
-                        LaunchOptionsPage.Show(providers);
-                        break;
-                    case ControlAction.ManageLiteLlm:
-                        InstallFlow.ManageLiteLlm(installer, providers);
-                        break;
-                    case ControlAction.Install:
-                        InstallFlow.Run(missing, installer, providers);
-                        break;
+                    if (cli.Interactive) continue;
+                    return 0;
                 }
-                continue;
+                if (sessionId is null) return 0;
+
+                // Copilot exited: surface the captured resume id/name, then loop back to
+                // the model picker so the user can continue with a different model (or Exit).
+                ShowSessionSaved(sessionId, cli.SessionName);
+                resuming = true;        // next launch resumes the same session id
+                lastLaunched = chosen;  // remember so we can unload it if the user switches
             }
-
-            var launchAction = PromptLaunchAction(chosen, resuming);
-            if (launchAction == LaunchAction.BackToPicker) continue;
-            if (launchAction == LaunchAction.LaunchCopilot
-                && !Preflight.Ok(chosen, cli.Interactive, providers))
-                continue;
-
-            // Continuing with a different model: unload the previous one to free its VRAM.
-            if (lastLaunched is not null && (lastLaunched.Provider != chosen.Provider || lastLaunched.Model != chosen.Model))
-            {
-                var prev = lastLaunched;
-                AnsiConsole.Status().Start($"Unloading {prev.Model}...", _ => providers.Unload(prev));
-                AnsiConsole.MarkupLine($"[dim]Unloaded previous model {Markup.Escape(prev.Provider)} / {Markup.Escape(prev.Model)}.[/]");
-            }
-
-            if (launchAction == LaunchAction.ChatOnly)
-            {
-                bool chatCompleted = chatRunner.Run(chosen);
-                if (!chatCompleted) continue;
-                lastLaunched = chosen;
-                continue;
-            }
-
-            if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
-
-            bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
-
-            // Dry-run ends immediately. If launch was declined/failed in interactive mode,
-            // return to the picker so the user can choose another model.
-            if (cli.DryRun) return 0;
-            if (!launched)
-            {
-                if (cli.Interactive) continue;
-                return 0;
-            }
-            if (sessionId is null) return 0;
-
-            // Copilot exited: surface the captured resume id/name, then loop back to
-            // the model picker so the user can continue with a different model (or Exit).
-            ShowSessionSaved(sessionId, cli.SessionName);
-            resuming = true;        // next launch resumes the same session id
-            lastLaunched = chosen;  // remember so we can unload it if the user switches
+        }
+        catch (Exception ex)
+        {
+            terminalSession.Dispose();
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[red]Unhandled error:[/]");
+            AnsiConsole.WriteLine(ex.ToString());
+            return 1;
         }
     }
 

@@ -40,7 +40,7 @@ internal static class Banner
     {
         var (top, bot) = GradientSets[Random.Shared.Next(GradientSets.Length)];
 
-        if (!animate || Console.IsOutputRedirected)
+        if (!animate || Console.IsOutputRedirected || !TerminalUi.SupportsAnsi())
         {
             DrawFrame(BuildFrame(FinalIconX, showTrail: false), top, bot);
             return;

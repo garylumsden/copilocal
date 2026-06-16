@@ -186,7 +186,11 @@ internal static class Program
 
                 if (launchAction == LaunchAction.ChatOnly)
                 {
-                    bool chatCompleted = chatRunner.Run(chosen);
+                    // Chat renders a transcript: run it on the normal buffer so the terminal's
+                    // native scrollback works (the alt screen has none).
+                    bool chatCompleted;
+                    using (TerminalUi.SuspendAltScreen())
+                        chatCompleted = chatRunner.Run(chosen);
                     if (!chatCompleted) continue;
                     lastLaunched = chosen;
                     continue;
@@ -194,7 +198,11 @@ internal static class Program
 
                 if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
 
-                bool launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
+                // GitHub Copilot CLI drives its own full-screen TUI; suspend our alt screen so the
+                // two don't fight (which leaves the child's output garbled/discombobulated).
+                bool launched;
+                using (TerminalUi.SuspendAltScreen())
+                    launched = launcher.Launch(chosen, Options(cli, sessionId, resuming));
 
                 // Dry-run ends immediately. If launch was declined/failed in interactive mode,
                 // return to the picker so the user can choose another model.

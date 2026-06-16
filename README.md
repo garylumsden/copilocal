@@ -189,7 +189,9 @@ Commands inside chat:
 - slash command autocomplete: type `/` then Enter to pick a command, or use unique prefixes like `/h`
 - bottom-right token tracker showing active model, cumulative tokens, and last-turn token usage (when provider returns `usage` fields)
 - assistant replies wrap to terminal width and render common markdown (headings, emphasis, inline code, links) plus markdown tables as native terminal tables
-- interactive screens (picker/options/install/chat) redraw on a cleared screen to avoid page append artifacts
+- interactive menus (picker/options/install) use the terminal's alternate screen so each is a
+  distinct, cleared page; chat mode and the GitHub Copilot CLI launch run on the normal buffer
+  so the terminal's native scrollback works and the launched CLI's own UI renders cleanly
 
 ### How models are discovered
 

@@ -62,7 +62,7 @@ internal static class TerminalUi
         catch (PlatformNotSupportedException) { }
     }
 
-    static bool SupportsAnsi()
+    internal static bool SupportsAnsi()
     {
         if (Console.IsOutputRedirected) return false;
         string term = Environment.GetEnvironmentVariable("TERM") ?? "";
@@ -72,12 +72,44 @@ internal static class TerminalUi
 
     sealed class AltScreenScope : IDisposable
     {
+        readonly ConsoleCancelEventHandler _cancelHandler;
+        readonly EventHandler _processExitHandler;
         bool _disposed;
+        int _restored;
+
+        internal AltScreenScope()
+        {
+            _cancelHandler = (_, _) => RestoreAltScreen();
+            _processExitHandler = (_, _) => RestoreAltScreen();
+
+            try { Console.CancelKeyPress += _cancelHandler; }
+            catch (InvalidOperationException) { }
+            catch (PlatformNotSupportedException) { }
+
+            try { AppDomain.CurrentDomain.ProcessExit += _processExitHandler; }
+            catch (InvalidOperationException) { }
+            catch (PlatformNotSupportedException) { }
+        }
 
         public void Dispose()
         {
-            if (_disposed || Console.IsOutputRedirected) return;
+            if (_disposed) return;
             _disposed = true;
+            RestoreAltScreen();
+
+            try { Console.CancelKeyPress -= _cancelHandler; }
+            catch (InvalidOperationException) { }
+            catch (PlatformNotSupportedException) { }
+
+            try { AppDomain.CurrentDomain.ProcessExit -= _processExitHandler; }
+            catch (InvalidOperationException) { }
+            catch (PlatformNotSupportedException) { }
+        }
+
+        void RestoreAltScreen()
+        {
+            if (System.Threading.Interlocked.Exchange(ref _restored, 1) == 1) return;
+
             try
             {
                 Console.Write(ExitAltScreen);

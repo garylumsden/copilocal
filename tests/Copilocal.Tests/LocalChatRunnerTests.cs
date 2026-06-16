@@ -137,6 +137,16 @@ public sealed class LocalChatRunnerTests
     }
 
     [TestMethod]
+    public void BuildTokenUsageRenderText_ReservesFinalConsoleColumn()
+    {
+        var rendered = LocalChatRunner.BuildTokenUsageRenderText(new string('x', 80), 40);
+
+        rendered.Text.Should().HaveLength(38);
+        rendered.Left.Should().Be(1);
+        (rendered.Left + rendered.Text.Length - 1).Should().BeLessThanOrEqualTo(38);
+    }
+
+    [TestMethod]
     public void AutocompleteChatCommand_UniquePrefix_ResolvesCommand()
     {
         var result = LocalChatRunner.AutocompleteChatCommand("/h");
@@ -193,6 +203,22 @@ public sealed class LocalChatRunnerTests
     }
 
     [TestMethod]
+    public void TryExtractFirstMarkdownTable_PreservesBracketedCellText()
+    {
+        const string content = """
+            | Type | Access | Maybe |
+            | --- | --- | --- |
+            | List[int] | arr[0] | Optional[str] |
+            """;
+
+        bool ok = LocalChatRunner.TryExtractFirstMarkdownTable(content, out var table);
+
+        ok.Should().BeTrue();
+        table.Rows.Should().ContainSingle()
+            .Which.Should().Equal("List[int]", "arr[0]", "Optional[str]");
+    }
+
+    [TestMethod]
     public void TryExtractFirstMarkdownTable_WithNoDataRows_ReturnsFalse()
     {
         const string markdown = """
@@ -213,6 +239,14 @@ public sealed class LocalChatRunnerTests
         rendered.Should().Contain("[bold]bold[/]");
         rendered.Should().Contain("[grey70]code[/]");
         rendered.Should().Contain("[link=https://example.com]docs[/]");
+    }
+
+    [TestMethod]
+    public void RenderMarkdownLine_PreservesBracketsInLinkLabel()
+    {
+        string rendered = LocalChatRunner.RenderMarkdownLine("[a[b]](https://x)");
+
+        rendered.Should().Contain("[link=https://x]a[[b]][/]");
     }
 
     [TestMethod]

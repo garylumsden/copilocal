@@ -12,6 +12,14 @@ internal sealed partial class LocalChatRunner
             : $"m:{modelLabel} | tok sum:{total} p:{promptTotal} c:{completionTotal} | last:{last.TotalTokens} (p{last.PromptTokens}/c{last.CompletionTokens})";
     }
 
+    internal static (string Text, int Left) BuildTokenUsageRenderText(string text, int width)
+    {
+        int maxLen = Math.Max(10, width - 2);
+        if (text.Length > maxLen) text = text[..maxLen];
+        int left = Math.Max(0, width - 1 - text.Length);
+        return (text, left);
+    }
+
     static string ShortModelLabel(string model)
     {
         string trimmed = (model ?? "").Trim();
@@ -66,10 +74,7 @@ internal sealed partial class LocalChatRunner
                 if (width < 20 || height < 2) return;
 
                 string text = BuildTokenUsageLine(_model, _promptTotal, _completionTotal, _total, _last);
-                int maxLen = Math.Max(10, width - 1);
-                if (text.Length > maxLen) text = text[..maxLen];
-
-                int left = Math.Max(0, width - text.Length);
+                (text, int left) = BuildTokenUsageRenderText(text, width);
                 int top = height - 1;
 
                 int saveLeft = Math.Clamp(Console.CursorLeft, 0, Math.Max(0, width - 1));
@@ -80,8 +85,6 @@ internal sealed partial class LocalChatRunner
                     ClearAt(_lastLeft, _lastTop, _renderWidth, width, height);
 
                 Console.SetCursorPosition(left, top);
-                if (_renderWidth > text.Length)
-                    text += new string(' ', _renderWidth - text.Length);
                 Console.Write(text);
                 _renderWidth = text.Length;
                 _lastLeft = left;

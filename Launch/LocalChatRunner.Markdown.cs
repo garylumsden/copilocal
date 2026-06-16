@@ -219,24 +219,32 @@ internal sealed partial class LocalChatRunner
         var parts = new List<string>();
         foreach (var child in cell)
         {
-            string line = RenderBlockSingleLine(child);
-            if (line.Length > 0) parts.Add(StripMarkupTags(line));
+            string line = RenderBlockPlainText(child);
+            if (line.Length > 0) parts.Add(line);
         }
         return string.Join(" ", parts).Trim();
     }
 
-    static string StripMarkupTags(string value)
-    {
-        if (value.Length == 0) return value;
-        var sb = new StringBuilder(value.Length);
-        bool inTag = false;
-        foreach (char ch in value)
+    static string RenderBlockPlainText(Block block) =>
+        block switch
         {
-            if (ch == '[') { inTag = true; continue; }
-            if (inTag && ch == ']') { inTag = false; continue; }
-            if (!inTag) sb.Append(ch);
+            ParagraphBlock p => RenderInlinePlainText(p.Inline),
+            HeadingBlock h => RenderInlinePlainText(h.Inline),
+            LeafBlock { Inline: not null } leaf => RenderInlinePlainText(leaf.Inline),
+            LeafBlock leaf => leaf.Lines.ToString().Replace("\r\n", " ").Replace('\n', ' ').Trim(),
+            ContainerBlock container => RenderContainerBlockPlainText(container),
+            _ => (block.ToString() ?? "").Trim(),
+        };
+
+    static string RenderContainerBlockPlainText(ContainerBlock container)
+    {
+        var parts = new List<string>();
+        foreach (var child in container)
+        {
+            string line = RenderBlockPlainText(child);
+            if (line.Length > 0) parts.Add(line);
         }
-        return sb.ToString();
+        return string.Join(" ", parts);
     }
 
     static IReadOnlyList<string> NormalizeRow(IReadOnlyList<string> row, int columnCount)
@@ -292,11 +300,40 @@ internal sealed partial class LocalChatRunner
         if (TryTrimmedUrl(url, out var normalized))
         {
             if (label.Length == 0) return RenderHyperlink(normalized, normalized);
-            string plainLabel = StripMarkupTags(label);
+            string plainLabel = RenderInlinePlainText((ContainerInline)link);
             string linkLabel = plainLabel.Length == 0 ? normalized : plainLabel;
             return RenderHyperlink(normalized, linkLabel);
         }
         return label.Length > 0 ? label : Markup.Escape(url);
+    }
+
+    static string RenderInlinePlainText(ContainerInline? container)
+    {
+        if (container is null) return "";
+        var sb = new StringBuilder();
+        for (Inline? current = container.FirstChild; current is not null; current = current.NextSibling)
+            sb.Append(RenderInlinePlainText(current));
+        return sb.ToString();
+    }
+
+    static string RenderInlinePlainText(Inline inline) =>
+        inline switch
+        {
+            LiteralInline literal => literal.Content.ToString(),
+            CodeInline code => code.Content,
+            EmphasisInline emphasis => RenderInlinePlainText((ContainerInline)emphasis),
+            LinkInline link => RenderLinkPlainText(link),
+            LineBreakInline => " ",
+            HtmlInline html => html.Tag,
+            ContainerInline container => RenderInlinePlainText(container),
+            _ => inline.ToString() ?? "",
+        };
+
+    static string RenderLinkPlainText(LinkInline link)
+    {
+        string label = RenderInlinePlainText((ContainerInline)link);
+        if (label.Length > 0) return label;
+        return link.GetDynamicUrl?.Invoke() ?? link.Url ?? "";
     }
 
     static string RenderLiteralWithAutoLinks(string literal)
@@ -304,7 +341,7 @@ internal sealed partial class LocalChatRunner
         if (string.IsNullOrEmpty(literal)) return "";
         var sb = new StringBuilder();
         int cursor = 0;
-        foreach (Match match in BareUrlRegex.Matches(literal))
+        foreach (Match match in BareUrlRegex().Matches(literal))
         {
             if (!match.Success || match.Index < cursor) continue;
             sb.Append(Markup.Escape(literal[cursor..match.Index]));

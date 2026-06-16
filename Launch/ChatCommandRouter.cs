@@ -2,7 +2,7 @@ using Spectre.Console;
 
 namespace Copilocal.Launch;
 
-internal sealed partial class LocalChatRunner
+internal static class ChatCommandRouter
 {
     sealed record ChatCommandSpec(string Name, string Description);
 
@@ -52,14 +52,7 @@ internal sealed partial class LocalChatRunner
     internal static string CanonicalCommand(string command) =>
         command.Equals("/quit", StringComparison.OrdinalIgnoreCase) ? "/exit" : command.ToLowerInvariant();
 
-    static bool LooksLikeSlashCommand(string typed)
-    {
-        if (typed.Length == 0 || typed[0] != '/') return false;
-        if (typed.IndexOfAny(new[] { ' ', '\t' }) >= 0) return false;
-        return typed.IndexOf('/', 1) < 0;
-    }
-
-    static string PromptCommandSelection(string typed, IReadOnlyList<string> matches)
+    internal static string PromptCommandSelection(string typed, IReadOnlyList<string> matches)
     {
         var prompt = new SelectionPrompt<string>()
             .Title($"Select command for [white]{Markup.Escape(typed)}[/]:")
@@ -67,6 +60,13 @@ internal sealed partial class LocalChatRunner
             .PageSize(Math.Clamp(matches.Count + 1, 4, 10));
         prompt.AddChoices(matches);
         return AnsiConsole.Prompt(prompt);
+    }
+
+    static bool LooksLikeSlashCommand(string typed)
+    {
+        if (typed.Length == 0 || typed[0] != '/') return false;
+        if (typed.IndexOfAny(new[] { ' ', '\t' }) >= 0) return false;
+        return typed.IndexOf('/', 1) < 0;
     }
 
     static string DescribeCommand(string command) =>

@@ -191,7 +191,7 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
         return (prompt, output);
     }
 
-    static string ResolveProviderApiKey(MenuItem m, LaunchConfig cfg)
+    internal static string ResolveProviderApiKey(MenuItem m, LaunchConfig cfg)
     {
         if (!string.Equals(m.Provider, "LiteLLM", StringComparison.Ordinal))
             return "local";

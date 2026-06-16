@@ -96,4 +96,43 @@ public sealed class LocalChatRunnerTests
         LocalChatRunner.ParseAssistantReply("{ not json").Status
             .Should().Be(LocalChatRunner.ReplyStatus.Invalid);
     }
+
+    [TestMethod]
+    public void ParseUsage_WithAllTokenFields_ReturnsUsage()
+    {
+        var usage = LocalChatRunner.ParseUsage("""{"usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165}}""");
+
+        usage.Should().NotBeNull();
+        usage!.PromptTokens.Should().Be(120);
+        usage.CompletionTokens.Should().Be(45);
+        usage.TotalTokens.Should().Be(165);
+    }
+
+    [TestMethod]
+    public void ParseUsage_WithoutTotal_ComputesTotal()
+    {
+        var usage = LocalChatRunner.ParseUsage("""{"usage":{"prompt_tokens":10,"completion_tokens":15}}""");
+
+        usage.Should().NotBeNull();
+        usage!.TotalTokens.Should().Be(25);
+    }
+
+    [TestMethod]
+    public void ParseUsage_MissingOrMalformedUsage_ReturnsNull()
+    {
+        LocalChatRunner.ParseUsage("""{"choices":[{"message":{"content":"ok"}}]}""").Should().BeNull();
+        LocalChatRunner.ParseUsage("""{"usage":"oops"}""").Should().BeNull();
+        LocalChatRunner.ParseUsage("{ not json").Should().BeNull();
+    }
+
+    [TestMethod]
+    public void BuildTokenUsageLine_FormatsWithAndWithoutLastUsage()
+    {
+        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, null)
+            .Should().Contain("m:qwen2.5-coder:7b")
+            .And.Contain("last:n/a");
+
+        LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, new LocalChatRunner.TokenUsage(10, 5, 15))
+            .Should().Contain("last:15 (p10/c5)");
+    }
 }

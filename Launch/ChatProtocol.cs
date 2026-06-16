@@ -5,7 +5,7 @@ using Copilocal.Infrastructure;
 
 namespace Copilocal.Launch;
 
-internal sealed partial class LocalChatRunner
+internal static class ChatProtocol
 {
     internal static string BuildChatPayload(string model, IReadOnlyList<ChatMessage> messages)
     {
@@ -76,6 +76,12 @@ internal sealed partial class LocalChatRunner
         {
             return null;
         }
+    }
+
+    internal static string HttpFailureDetail(int status, string body)
+    {
+        string summary = ErrorSummary(body);
+        return summary.Length > 0 ? $"HTTP {status}: {summary}" : $"HTTP {status}";
     }
 
     static bool TryFirstMessage(JsonDocument doc, out JsonElement message)
@@ -158,12 +164,6 @@ internal sealed partial class LocalChatRunner
         }
         if (names.Count == 0) return "tool_calls present with no assistant text";
         return $"tool_calls present ({string.Join(", ", names)})";
-    }
-
-    static string HttpFailureDetail(int status, string body)
-    {
-        string summary = ErrorSummary(body);
-        return summary.Length > 0 ? $"HTTP {status}: {summary}" : $"HTTP {status}";
     }
 
     static string ErrorSummary(string body)

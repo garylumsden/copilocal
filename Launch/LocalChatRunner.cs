@@ -1,6 +1,4 @@
-using System.Text.RegularExpressions;
 using System.Text;
-using Markdig;
 using Spectre.Console;
 
 using Copilocal.Infrastructure;
@@ -10,13 +8,9 @@ using Copilocal.Ui;
 namespace Copilocal.Launch;
 
 /// <summary>Runs a local model-only chat loop without launching GitHub Copilot CLI.</summary>
-internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGateway http)
+internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
 {
     const int ChatTimeoutMs = 180_000;
-    static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-
-    [GeneratedRegex(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase)]
-    private static partial Regex BareUrlRegex();
 
     internal const string DefaultSystemPrompt = """
         You are copilocal chat mode, a command-line assistant for experimenting with local language models.
@@ -36,20 +30,6 @@ internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGatewa
         - If the user asks for actions, provide exact commands they can run locally.
         - Be direct, technically accurate, and explicit about uncertainty.
         """;
-
-    internal sealed record ChatMessage(string Role, string Content);
-    internal sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens);
-    internal sealed record MarkdownTable(IReadOnlyList<string> Headers, IReadOnlyList<IReadOnlyList<string>> Rows);
-
-    internal enum ReplyStatus
-    {
-        Ok,
-        ReasoningOnly,
-        ToolCallOnly,
-        Invalid,
-    }
-
-    internal sealed record ParsedReply(ReplyStatus Status, string Content, string Detail);
 
     internal bool Run(MenuItem model)
     {
@@ -95,17 +75,17 @@ internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGatewa
             input = input.TrimEnd();
             if (input.Length == 0) continue;
 
-            var autocomplete = AutocompleteChatCommand(input);
-            if (autocomplete.Kind == CommandAutocompleteKind.Resolved)
+            var autocomplete = ChatCommandRouter.AutocompleteChatCommand(input);
+            if (autocomplete.Kind == ChatCommandRouter.CommandAutocompleteKind.Resolved)
                 input = autocomplete.Command;
-            else if (autocomplete.Kind == CommandAutocompleteKind.Ambiguous)
+            else if (autocomplete.Kind == ChatCommandRouter.CommandAutocompleteKind.Ambiguous)
             {
                 tokenTracker.Hide();
-                string selected = PromptCommandSelection(autocomplete.Typed, autocomplete.Matches);
+                string selected = ChatCommandRouter.PromptCommandSelection(autocomplete.Typed, autocomplete.Matches);
                 tokenTracker.Render();
-                input = CanonicalCommand(selected);
+                input = ChatCommandRouter.CanonicalCommand(selected);
             }
-            else if (autocomplete.Kind == CommandAutocompleteKind.Unknown)
+            else if (autocomplete.Kind == ChatCommandRouter.CommandAutocompleteKind.Unknown)
             {
                 tokenTracker.Hide();
                 AnsiConsole.MarkupLine(
@@ -142,7 +122,7 @@ internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGatewa
             }
 
             messages.Add(new ChatMessage("user", input));
-            string payload = BuildChatPayload(model.Model, messages);
+            string payload = ChatProtocol.BuildChatPayload(model.Model, messages);
             var (ok, status, body) = AnsiConsole.Status().Start("Thinking...", _ =>
                 http.PostJson($"{baseUrl}/chat/completions", payload, ChatTimeoutMs, bearerToken));
             if (ExitOnInterrupt(interrupt, tokenTracker)) return true;
@@ -150,19 +130,19 @@ internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGatewa
             {
                 messages.RemoveAt(messages.Count - 1);
                 tokenTracker.Hide();
-                AnsiConsole.MarkupLine($"[red]Request failed:[/] {Markup.Escape(HttpFailureDetail(status, body))}");
+                AnsiConsole.MarkupLine($"[red]Request failed:[/] {Markup.Escape(ChatProtocol.HttpFailureDetail(status, body))}");
                 tokenTracker.Render();
                 continue;
             }
 
-            tokenTracker.Update(ParseUsage(body));
-            var reply = ParseAssistantReply(body);
+            tokenTracker.Update(ChatProtocol.ParseUsage(body));
+            var reply = ChatProtocol.ParseAssistantReply(body);
             tokenTracker.Hide();
             switch (reply.Status)
             {
                 case ReplyStatus.Ok:
                     messages.Add(new ChatMessage("assistant", reply.Content));
-                    RenderAssistantContent(reply.Content);
+                    ChatMarkdownRenderer.RenderAssistantContent(reply.Content);
                     break;
                 case ReplyStatus.ReasoningOnly:
                     messages.RemoveAt(messages.Count - 1);

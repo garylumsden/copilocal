@@ -11,9 +11,14 @@ using Spectre.Console;
 
 namespace Copilocal.Launch;
 
-internal sealed partial class LocalChatRunner
+internal static partial class ChatMarkdownRenderer
 {
-    static void RenderAssistantContent(string content)
+    static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
+
+    [GeneratedRegex(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase)]
+    private static partial Regex BareUrlRegex();
+
+    internal static void RenderAssistantContent(string content)
     {
         AnsiConsole.MarkupLine("[springgreen3]assistant>[/]");
         var doc = Markdown.Parse(content ?? "", ChatMarkdownPipeline);

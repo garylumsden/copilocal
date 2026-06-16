@@ -11,12 +11,13 @@ using Spectre.Console;
 
 namespace Copilocal.Launch;
 
-internal static partial class ChatMarkdownRenderer
+internal static class ChatMarkdownRenderer
 {
     static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
 
-    [GeneratedRegex(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase)]
-    private static partial Regex BareUrlRegex();
+    // Plain interpreted Regex (no RegexOptions.Compiled) is AOT-safe with no IL3050 warning,
+    // and avoids the `partial` the GeneratedRegex source generator would require.
+    static readonly Regex BareUrlRegex = new(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase);
 
     internal static void RenderAssistantContent(string content)
     {
@@ -346,7 +347,7 @@ internal static partial class ChatMarkdownRenderer
         if (string.IsNullOrEmpty(literal)) return "";
         var sb = new StringBuilder();
         int cursor = 0;
-        foreach (Match match in BareUrlRegex().Matches(literal))
+        foreach (Match match in BareUrlRegex.Matches(literal))
         {
             if (!match.Success || match.Index < cursor) continue;
             sb.Append(Markup.Escape(literal[cursor..match.Index]));

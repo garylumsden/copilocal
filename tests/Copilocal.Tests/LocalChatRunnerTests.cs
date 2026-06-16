@@ -135,4 +135,49 @@ public sealed class LocalChatRunnerTests
         LocalChatRunner.BuildTokenUsageLine("qwen2.5-coder:7b", 100, 25, 125, new LocalChatRunner.TokenUsage(10, 5, 15))
             .Should().Contain("last:15 (p10/c5)");
     }
+
+    [TestMethod]
+    public void SplitMarkdownBlocks_WithTable_ReturnsTextTableTextBlocks()
+    {
+        const string content = """
+            Intro line
+
+            | Model | Tokens |
+            | --- | --- |
+            | qwen2.5-coder:7b | 32768 |
+            | phi-4-mini | 16384 |
+
+            Outro line
+            """;
+
+        var blocks = LocalChatRunner.SplitMarkdownBlocks(content);
+
+        blocks.Should().HaveCount(3);
+        blocks[0].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Text);
+        blocks[1].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Table);
+        blocks[2].Kind.Should().Be(LocalChatRunner.ChatBlockKind.Text);
+        blocks[1].Table!.Headers.Should().Equal("Model", "Tokens");
+        blocks[1].Table!.Rows.Should().HaveCount(2);
+    }
+
+    [TestMethod]
+    public void TryReadMarkdownTable_WithNoDataRows_ReturnsFalse()
+    {
+        var lines = new[]
+        {
+            "| A | B |",
+            "| --- | --- |",
+            "",
+        };
+
+        bool ok = LocalChatRunner.TryReadMarkdownTable(lines, 0, out _, out _);
+
+        ok.Should().BeFalse();
+    }
+
+    [TestMethod]
+    public void ParseMarkdownTableRow_WithoutPipes_ReturnsEmpty()
+    {
+        LocalChatRunner.ParseMarkdownTableRow("just text").Should().BeEmpty();
+    }
 }

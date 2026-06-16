@@ -170,7 +170,7 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
         catch (System.ComponentModel.Win32Exception ex)
         {
             AnsiConsole.MarkupLine($"[red]Failed to launch copilot:[/] {Markup.Escape(ex.Message)}");
-            AnsiConsole.MarkupLine("[dim]Install it: https://github.com/github/copilot-cli[/]");
+            AnsiConsole.MarkupLine("[dim]Install it: [link=https://github.com/github/copilot-cli]https://github.com/github/copilot-cli[/][/]");
             LastExitCode = 127;   // conventional "command not found" so --pick fails non-zero
             return false;
         }

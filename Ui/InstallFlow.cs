@@ -11,9 +11,11 @@ internal static class InstallFlow
 {
     internal static void Run(List<ProviderInfo> missing, ProviderInstaller installer, ProviderHub providers)
     {
+        TerminalUi.ClearScreen();
         if (missing.Count == 0)
         {
             AnsiConsole.MarkupLine("[green]All providers are already installed.[/]");
+            PauseForContinue();
             return;
         }
 
@@ -28,7 +30,7 @@ internal static class InstallFlow
                 Markup.Escape(p.Name),
                 Markup.Escape(p.Blurb),
                 Markup.Escape(p.InstallHow),
-                Markup.Escape(p.DocsUrl));
+                $"[link={p.DocsUrl}]{Markup.Escape(p.DocsUrl)}[/]");
         AnsiConsole.Write(table);
         AnsiConsole.MarkupLine("[dim]Space to toggle, Enter to confirm. Read the docs links above to decide.[/]");
 
@@ -43,6 +45,7 @@ internal static class InstallFlow
         if (picks.Count == 0)
         {
             AnsiConsole.MarkupLine("[dim]Nothing selected.[/]");
+            PauseForContinue();
             return;
         }
 
@@ -67,12 +70,15 @@ internal static class InstallFlow
             if (p.Name == "LM Studio")
                 AnsiConsole.MarkupLine("[dim]Tip: launch LM Studio once so its 'lms' CLI is bootstrapped.[/]");
         }
+
+        PauseForContinue();
     }
 
     internal static void ManageLiteLlm(ProviderInstaller installer, ProviderHub providers)
     {
         while (true)
         {
+            TerminalUi.ClearScreen();
             var cfg = LaunchConfig.Load();
             var status = installer.LiteLlmStatus(cfg);
             string modeLabel = cfg.LiteLlmRuntimeMode == ProviderInstaller.LiteLlmModePython ? "python" : "docker";
@@ -180,7 +186,15 @@ internal static class InstallFlow
                 case "Back":
                     return;
             }
+
+            PauseForContinue();
         }
+    }
+
+    static void PauseForContinue()
+    {
+        AnsiConsole.Markup("[grey58]Press Enter to continue…[/]");
+        Console.ReadLine();
     }
 
     static bool InstallLiteLlm(ProviderInstaller installer, ProviderHub providers)
@@ -326,8 +340,8 @@ internal static class InstallFlow
     {
         string endpoint = LaunchConfig.NormalizeBaseUrl(cfg.LiteLlmBaseUrl);
         string uiUrl = LiteLlmUiUrl(endpoint);
-        AnsiConsole.MarkupLine($"[dim]Endpoint:[/] [white]{Markup.Escape(endpoint)}[/]");
-        AnsiConsole.MarkupLine($"[dim]UI:[/] {Markup.Escape(uiUrl)}");
+        AnsiConsole.MarkupLine($"[dim]Endpoint:[/] [link={endpoint}]{Markup.Escape(endpoint)}[/]");
+        AnsiConsole.MarkupLine($"[dim]UI:[/] [link={uiUrl}]{Markup.Escape(uiUrl)}[/]");
     }
 
     static string LiteLlmUiUrl(string endpoint)

@@ -14,7 +14,9 @@ internal sealed partial class LocalChatRunner(ProviderHub providers, IHttpGatewa
 {
     const int ChatTimeoutMs = 180_000;
     static readonly MarkdownPipeline ChatMarkdownPipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
-    static readonly Regex BareUrlRegex = new(@"https?://[^\s\)\]>]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    [GeneratedRegex(@"https?://[^\s\)\]>]+", RegexOptions.IgnoreCase)]
+    private static partial Regex BareUrlRegex();
 
     internal const string DefaultSystemPrompt = """
         You are copilocal chat mode, a command-line assistant for experimenting with local language models.

@@ -31,6 +31,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         """;
 
     internal sealed record ChatMessage(string Role, string Content);
+    internal sealed record TokenUsage(int PromptTokens, int CompletionTokens, int TotalTokens);
 
     internal enum ReplyStatus
     {
@@ -67,9 +68,12 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
             AnsiConsole.MarkupLine($"[yellow]Model response looked unusual:[/] {Markup.Escape(warm.Detail)}");
 
         ShowHeader(model, baseUrl);
+        var tokenTracker = new TokenUsageTracker();
+        tokenTracker.Render();
         var messages = new List<ChatMessage> { new("system", DefaultSystemPrompt) };
         while (true)
         {
+            tokenTracker.Render();
             AnsiConsole.Markup("[deepskyblue1]you>[/] ");
             string? input = Console.ReadLine();
             if (input is null) return true;
@@ -82,6 +86,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
             {
                 messages.Clear();
                 messages.Add(new ChatMessage("system", DefaultSystemPrompt));
+                tokenTracker.Reset();
                 AnsiConsole.MarkupLine("[grey58]Conversation cleared.[/]");
                 continue;
             }
@@ -103,6 +108,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
                 continue;
             }
 
+            tokenTracker.Update(ParseUsage(body));
             var reply = ParseAssistantReply(body);
             switch (reply.Status)
             {
@@ -129,6 +135,7 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
                     AnsiConsole.MarkupLine($"[red]Could not parse model reply:[/] {Markup.Escape(reply.Detail)}");
                     break;
             }
+            tokenTracker.Render();
         }
     }
 
@@ -229,6 +236,29 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         }
     }
 
+    internal static TokenUsage? ParseUsage(string body)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("usage", out var usage)
+                || usage.ValueKind != JsonValueKind.Object) return null;
+
+            bool hasPrompt = TryReadInt(usage, "prompt_tokens", out int prompt);
+            bool hasCompletion = TryReadInt(usage, "completion_tokens", out int completion);
+            bool hasTotal = TryReadInt(usage, "total_tokens", out int total);
+            if (!hasPrompt && !hasCompletion && !hasTotal) return null;
+            if (!hasTotal) total = prompt + completion;
+            return new TokenUsage(prompt, completion, total);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     static bool TryFirstMessage(JsonDocument doc, out JsonElement message)
     {
         message = default;
@@ -274,6 +304,21 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString() ?? ""
             : "";
+
+    static bool TryReadInt(JsonElement element, string property, out int value)
+    {
+        value = 0;
+        if (!element.TryGetProperty(property, out var prop)) return false;
+        switch (prop.ValueKind)
+        {
+            case JsonValueKind.Number:
+                return prop.TryGetInt32(out value);
+            case JsonValueKind.String:
+                return int.TryParse(prop.GetString(), out value);
+            default:
+                return false;
+        }
+    }
 
     static void AddTextPiece(List<string> pieces, string value)
     {
@@ -332,6 +377,90 @@ internal sealed class LocalChatRunner(ProviderHub providers, IHttpGateway http)
         }
 
         return Trim(body);
+    }
+
+    internal static string BuildTokenUsageLine(int promptTotal, int completionTotal, int total, TokenUsage? last) =>
+        last is null
+            ? $"tok sum:{total} p:{promptTotal} c:{completionTotal} | last:n/a"
+            : $"tok sum:{total} p:{promptTotal} c:{completionTotal} | last:{last.TotalTokens} (p{last.PromptTokens}/c{last.CompletionTokens})";
+
+    sealed class TokenUsageTracker
+    {
+        int _promptTotal;
+        int _completionTotal;
+        int _total;
+        TokenUsage? _last;
+        int _renderWidth;
+        bool _enabled = true;
+
+        internal void Reset()
+        {
+            _promptTotal = 0;
+            _completionTotal = 0;
+            _total = 0;
+            _last = null;
+            Render();
+        }
+
+        internal void Update(TokenUsage? usage)
+        {
+            _last = usage;
+            if (usage is null) return;
+            _promptTotal += usage.PromptTokens;
+            _completionTotal += usage.CompletionTokens;
+            _total += usage.TotalTokens;
+        }
+
+        internal void Render()
+        {
+            if (!_enabled || Console.IsOutputRedirected) return;
+            try
+            {
+                int width = Console.WindowWidth;
+                int height = Console.WindowHeight;
+                if (width < 20 || height < 2) return;
+
+                string text = BuildTokenUsageLine(_promptTotal, _completionTotal, _total, _last);
+                int maxLen = Math.Max(10, width - 1);
+                if (text.Length > maxLen) text = text[..maxLen];
+
+                int left = Math.Max(0, width - text.Length);
+                int top = height - 1;
+
+                int saveLeft = Math.Clamp(Console.CursorLeft, 0, Math.Max(0, width - 1));
+                int saveTop = Math.Clamp(Console.CursorTop, 0, Math.Max(0, height - 1));
+
+                Console.SetCursorPosition(left, top);
+                if (_renderWidth > text.Length)
+                    text += new string(' ', _renderWidth - text.Length);
+                Console.Write(text);
+                _renderWidth = text.Length;
+                Console.SetCursorPosition(saveLeft, saveTop);
+            }
+            catch (IOException)
+            {
+                Disable("I/O unavailable");
+            }
+            catch (InvalidOperationException)
+            {
+                Disable("cursor control unavailable");
+            }
+            catch (PlatformNotSupportedException)
+            {
+                Disable("platform unsupported");
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Terminal resize race; skip this render and continue.
+            }
+        }
+
+        void Disable(string reason)
+        {
+            if (!_enabled) return;
+            _enabled = false;
+            AnsiConsole.MarkupLine($"[dim]Token tracker disabled ({Markup.Escape(reason)}).[/]");
+        }
     }
 
     static string Trim(string text)

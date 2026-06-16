@@ -183,6 +183,7 @@ Commands inside chat:
 - `/clear` reset conversation history
 - `/multi` compose multiline input (finish with `/send`, cancel with `/cancel`)
 - `/exit` return to model picker
+- bottom-right token tracker showing cumulative and last-turn token usage (when provider returns `usage` fields)
 
 ### How models are discovered
 

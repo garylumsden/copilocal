@@ -123,28 +123,36 @@ internal sealed class LaunchConfig
     internal void Save(string? path = null)
     {
         path ??= FilePath;
+        string tmpPath = path + ".tmp";
         try
         {
             string? dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            using var stream = File.Create(path);
-            using var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-            w.WriteStartObject();
-            w.WriteStartArray("flags");
-            foreach (var f in Flags.OrderBy(f => f, StringComparer.Ordinal))
-                w.WriteStringValue(f);
-            w.WriteEndArray();
-            w.WriteString("reasoningEffort", ReasoningEffort);
-            w.WriteNumber("maxPromptTokens", MaxPromptTokens);
-            w.WriteNumber("maxOutputTokens", MaxOutputTokens);
-            w.WriteString("extraArgs", ExtraArgs);
-            w.WriteBoolean("liteLlmEnabled", LiteLlmEnabled);
-            w.WriteBoolean("hideLocalProvidersWhenLiteLlm", HideLocalProvidersWhenLiteLlm);
-            w.WriteString("liteLlmBaseUrl", NormalizeBaseUrl(LiteLlmBaseUrl));
-            w.WriteString("liteLlmApiKey", NormalizeLiteLlmApiKey(LiteLlmApiKey));
-            w.WriteString("liteLlmApiKeyEnvVar", LiteLlmApiKeyEnvVar);
-            w.WriteString("liteLlmRuntimeMode", LiteLlmRuntimeMode);
-            w.WriteEndObject();
+            using (var stream = File.Create(tmpPath))
+            {
+                using (var w = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true }))
+                {
+                    w.WriteStartObject();
+                    w.WriteStartArray("flags");
+                    foreach (var f in Flags.OrderBy(f => f, StringComparer.Ordinal))
+                        w.WriteStringValue(f);
+                    w.WriteEndArray();
+                    w.WriteString("reasoningEffort", ReasoningEffort);
+                    w.WriteNumber("maxPromptTokens", MaxPromptTokens);
+                    w.WriteNumber("maxOutputTokens", MaxOutputTokens);
+                    w.WriteString("extraArgs", ExtraArgs);
+                    w.WriteBoolean("liteLlmEnabled", LiteLlmEnabled);
+                    w.WriteBoolean("hideLocalProvidersWhenLiteLlm", HideLocalProvidersWhenLiteLlm);
+                    w.WriteString("liteLlmBaseUrl", NormalizeBaseUrl(LiteLlmBaseUrl));
+                    w.WriteString("liteLlmApiKey", NormalizeLiteLlmApiKey(LiteLlmApiKey));
+                    w.WriteString("liteLlmApiKeyEnvVar", LiteLlmApiKeyEnvVar);
+                    w.WriteString("liteLlmRuntimeMode", LiteLlmRuntimeMode);
+                    w.WriteEndObject();
+                    w.Flush();
+                    stream.Flush(true);
+                }
+            }
+            ReplaceFile(tmpPath, path);
         }
         catch (IOException)
         {
@@ -153,6 +161,51 @@ internal sealed class LaunchConfig
         catch (UnauthorizedAccessException)
         {
             // best-effort: failing to persist preferences should not block launch.
+        }
+        finally
+        {
+            TryDelete(tmpPath);
+        }
+    }
+
+    static void ReplaceFile(string tmpPath, string path)
+    {
+        try
+        {
+            File.Move(tmpPath, path, overwrite: true);
+            return;
+        }
+        catch (Exception ex) when (CanFallbackReplace(ex))
+        {
+        }
+
+        try
+        {
+            File.Replace(tmpPath, path, null);
+            return;
+        }
+        catch (Exception ex) when (CanFallbackReplace(ex))
+        {
+        }
+
+        if (File.Exists(path)) File.Delete(path);
+        File.Move(tmpPath, path);
+    }
+
+    static bool CanFallbackReplace(Exception ex) =>
+        ex is IOException || ex is UnauthorizedAccessException || ex is PlatformNotSupportedException;
+
+    static void TryDelete(string path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
         }
     }
 

@@ -147,6 +147,51 @@ public sealed class LaunchConfigTests
     }
 
     [TestMethod]
+    public void SaveThenLoad_LeavesNoTempFileAndRoundTripsContent()
+    {
+        string path = Path.Join(AppContext.BaseDirectory, $"copilocal-cfg-{Guid.NewGuid():N}.json");
+        string tmpPath = path + ".tmp";
+        var config = new LaunchConfig
+        {
+            Flags = ["--yolo", "--banner"],
+            ReasoningEffort = "medium",
+            MaxPromptTokens = 8192,
+            MaxOutputTokens = 2048,
+            ExtraArgs = "--model test-model",
+            LiteLlmEnabled = true,
+            HideLocalProvidersWhenLiteLlm = true,
+            LiteLlmBaseUrl = "http://localhost:4000/v1",
+            LiteLlmApiKey = "sk-test",
+            LiteLlmApiKeyEnvVar = "MY_LITELLM_KEY",
+            LiteLlmRuntimeMode = "python",
+        };
+
+        try
+        {
+            config.Save(path);
+            var loaded = LaunchConfig.Load(path);
+
+            File.Exists(tmpPath).Should().BeFalse();
+            loaded.Flags.Should().BeEquivalentTo(config.Flags);
+            loaded.ReasoningEffort.Should().Be(config.ReasoningEffort);
+            loaded.MaxPromptTokens.Should().Be(config.MaxPromptTokens);
+            loaded.MaxOutputTokens.Should().Be(config.MaxOutputTokens);
+            loaded.ExtraArgs.Should().Be(config.ExtraArgs);
+            loaded.LiteLlmEnabled.Should().Be(config.LiteLlmEnabled);
+            loaded.HideLocalProvidersWhenLiteLlm.Should().Be(config.HideLocalProvidersWhenLiteLlm);
+            loaded.LiteLlmBaseUrl.Should().Be(config.LiteLlmBaseUrl);
+            loaded.LiteLlmApiKey.Should().Be(config.LiteLlmApiKey);
+            loaded.LiteLlmApiKeyEnvVar.Should().Be(config.LiteLlmApiKeyEnvVar);
+            loaded.LiteLlmRuntimeMode.Should().Be(config.LiteLlmRuntimeMode);
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(tmpPath);
+        }
+    }
+
+    [TestMethod]
     public void Load_NonObjectRoot_ReturnsDefaults()
     {
         // Arrange: a hand-edited config that parses but isn't a JSON object.

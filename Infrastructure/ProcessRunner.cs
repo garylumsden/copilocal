@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace Copilocal.Infrastructure;
 
@@ -18,6 +19,8 @@ internal sealed class ProcessRunner : IProcessRunner
                 Arguments = args,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardOutputEncoding = new UTF8Encoding(false),
+                StandardErrorEncoding = new UTF8Encoding(false),
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };

@@ -75,6 +75,24 @@ public sealed class CommandLineArgsTests
     }
 
     [TestMethod]
+    public void Parse_LonePickFlag_IsConsumedNotForwarded()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--pick" });
+
+        cli.Pick.Should().Be(-1);
+        cli.CopilotArgs.Should().NotContain("--pick");
+    }
+
+    [TestMethod]
+    public void Parse_LoneNameFlag_IsConsumedNotForwarded()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--name" });
+
+        cli.SessionName.Should().BeNull();
+        cli.CopilotArgs.Should().NotContain("--name");
+    }
+
+    [TestMethod]
     public void Parse_OwnFlagAfterSeparator_IsForwardedNotConsumed()
     {
         // Everything after "--" goes to copilot verbatim, even if it matches a copilocal flag.

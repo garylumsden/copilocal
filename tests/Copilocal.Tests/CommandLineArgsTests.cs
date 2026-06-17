@@ -45,6 +45,38 @@ public sealed class CommandLineArgsTests
     }
 
     [TestMethod]
+    [DataRow("--version")]
+    [DataRow("-V")]
+    public void Parse_VersionFlag_SetsShowVersionAndIsNotForwarded(string flag)
+    {
+        var cli = CommandLineArgs.Parse(new[] { flag });
+
+        cli.ShowVersion.Should().BeTrue();
+        cli.CopilotArgs.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    [DataRow("--help")]
+    [DataRow("-h")]
+    [DataRow("-?")]
+    public void Parse_HelpFlag_SetsShowHelpAndIsNotForwarded(string flag)
+    {
+        var cli = CommandLineArgs.Parse(new[] { flag });
+
+        cli.ShowHelp.Should().BeTrue();
+        cli.CopilotArgs.Should().BeEmpty();
+    }
+
+    [TestMethod]
+    public void Parse_HelpAfterSeparator_IsForwardedNotConsumed()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--", "--help" });
+
+        cli.ShowHelp.Should().BeFalse();
+        cli.CopilotArgs.Should().Equal("--help");
+    }
+
+    [TestMethod]
     [DataRow("--resume")]
     [DataRow("--continue")]
     [DataRow("-r")]

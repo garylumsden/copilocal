@@ -17,6 +17,12 @@ internal sealed record CommandLineArgs(
     /// not manage one for them.</summary>
     internal bool UserManagedSession { get; private init; }
 
+    /// <summary>True when <c>--version</c>/<c>-V</c> was given: print the version and exit.</summary>
+    internal bool ShowVersion { get; private init; }
+
+    /// <summary>True when <c>--help</c>/<c>-h</c>/<c>-?</c> was given: print usage and exit.</summary>
+    internal bool ShowHelp { get; private init; }
+
     /// <summary>True when copilocal should mint and manage a stable session id, enabling the
     /// "continue with a different model" loop.</summary>
     internal bool WantsManagedSession => Interactive && !DryRun && !UserManagedSession;
@@ -33,6 +39,9 @@ internal sealed record CommandLineArgs(
 
         bool dryRun = ExtractFlag(own, "--dry-run");
         bool offline = ExtractFlag(own, "--offline");
+        // Non-short-circuit OR so every alias is removed from the forwarded args.
+        bool showVersion = ExtractFlag(own, "--version") | ExtractFlag(own, "-V");
+        bool showHelp = ExtractFlag(own, "--help") | ExtractFlag(own, "-h") | ExtractFlag(own, "-?");
         string? sessionName = ExtractValue(own, "--name");
         int pick = ExtractInt(own, "--pick");
 
@@ -49,6 +58,8 @@ internal sealed record CommandLineArgs(
         return new CommandLineArgs(dryRun, offline, sessionName, pick, copilotArgs)
         {
             UserManagedSession = userSession,
+            ShowVersion = showVersion,
+            ShowHelp = showHelp,
         };
     }
 

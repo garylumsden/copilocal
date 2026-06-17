@@ -30,6 +30,21 @@ internal static class Program
         var chatRunner = new LocalChatRunner(providers, http);
 
         var cli = CommandLineArgs.Parse(argv);
+
+        if (cli.ShowVersion) { Console.WriteLine($"copilocal {AppVersion}"); return 0; }
+        if (cli.ShowHelp) { PrintUsage(); return 0; }
+
+        // The picker is interactive. In a non-interactive environment (piped input, CI, or the
+        // winget validation sandbox) there is no terminal to drive it, so exit cleanly instead of
+        // throwing — a crash here surfaces as STATUS_STACK_BUFFER_OVERRUN under Native AOT.
+        if (cli.Interactive && Console.IsInputRedirected)
+        {
+            Console.WriteLine($"copilocal {AppVersion}");
+            Console.WriteLine("copilocal is an interactive terminal app. Run it from an interactive terminal,");
+            Console.WriteLine("or use --pick <N> to launch a model non-interactively. See 'copilocal --help'.");
+            return 0;
+        }
+
         using var terminalSession = TerminalUi.StartSession(cli.Interactive);
         // A stable session id lets us resume the same conversation with a new model.
         string? sessionId = cli.WantsManagedSession ? Guid.NewGuid().ToString() : null;
@@ -221,6 +236,13 @@ internal static class Program
                 lastLaunched = chosen;  // remember so we can unload it if the user switches
             }
         }
+        catch (NotSupportedException)
+        {
+            // Spectre throws this when asked to show an interactive prompt without an interactive
+            // terminal. Treat it as a clean no-op exit (e.g. non-interactive validation runs).
+            terminalSession.Dispose();
+            return 0;
+        }
         catch (Exception ex)
         {
             terminalSession.Dispose();
@@ -229,6 +251,27 @@ internal static class Program
             AnsiConsole.WriteLine(ex.ToString());
             return 1;
         }
+    }
+
+    static string AppVersion =>
+        typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0";
+
+    static void PrintUsage()
+    {
+        Console.WriteLine($"copilocal {AppVersion}");
+        Console.WriteLine("Pick a local model, then launch GitHub Copilot CLI or chat locally.");
+        Console.WriteLine();
+        Console.WriteLine("Usage: copilocal [options] [-- <copilot args>]");
+        Console.WriteLine();
+        Console.WriteLine("Options:");
+        Console.WriteLine("  --pick <N>     Launch the Nth discovered model non-interactively");
+        Console.WriteLine("  --name <name>  Name the managed Copilot session");
+        Console.WriteLine("  --offline      Run Copilot air-gapped (COPILOT_OFFLINE=true)");
+        Console.WriteLine("  --dry-run      Resolve and print the launch without starting Copilot");
+        Console.WriteLine("  --version, -V  Print the version and exit");
+        Console.WriteLine("  --help, -h     Print this help and exit");
+        Console.WriteLine();
+        Console.WriteLine("Run without arguments in an interactive terminal to use the picker.");
     }
 
     static LaunchOptions Options(CommandLineArgs cli, string? sessionId, bool resuming) =>

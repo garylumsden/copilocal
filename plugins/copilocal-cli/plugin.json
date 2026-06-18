@@ -1,0 +1,8 @@
+{
+  "name": "copilocal-cli",
+  "description": "Copilocal plugin feasibility spike for GitHub Copilot CLI",
+  "version": "0.0.1",
+  "license": "MIT",
+  "commands": "commands/",
+  "skills": "skills/"
+}

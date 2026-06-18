@@ -33,6 +33,8 @@ internal static class Program
 
         if (cli.ShowVersion) { Console.WriteLine($"copilocal {AppVersion}"); return 0; }
         if (cli.ShowHelp) { PrintUsage(); return 0; }
+        if (!string.IsNullOrWhiteSpace(cli.OffloadPrompt))
+            return RunOffload(cli, providers, http);
 
         // The picker is interactive. In a non-interactive environment (piped input, CI, or the
         // winget validation sandbox) there is no terminal to drive it, so exit cleanly instead of
@@ -265,6 +267,7 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --pick <N>     Launch the Nth discovered model non-interactively");
+        Console.WriteLine("  --offload <t>  Run one non-interactive local-model task and print the reply");
         Console.WriteLine("  --name <name>  Name the managed Copilot session");
         Console.WriteLine("  --offline      Run Copilot air-gapped (COPILOT_OFFLINE=true)");
         Console.WriteLine("  --dry-run      Resolve and print the launch without starting Copilot");
@@ -276,6 +279,44 @@ internal static class Program
 
     static LaunchOptions Options(CommandLineArgs cli, string? sessionId, bool resuming) =>
         new(cli.DryRun, cli.Interactive, cli.Offline, sessionId, cli.SessionName, resuming, cli.CopilotArgs);
+
+    static int RunOffload(CommandLineArgs cli, ProviderHub providers, IHttpGateway http)
+    {
+        string prompt = (cli.OffloadPrompt ?? "").Trim();
+        if (prompt.Length == 0)
+        {
+            Console.Error.WriteLine("Offload prompt is empty. Pass text with --offload \"...\".");
+            return 2;
+        }
+
+        var cfg = LaunchConfig.Load();
+        bool liteEnabled = cfg.LiteLlmEnabled;
+        bool includeLocalProviders = !(liteEnabled && cfg.HideLocalProvidersWhenLiteLlm);
+        var models = providers.GatherModels(includeLocalProviders, liteEnabled);
+        if (models.Count == 0)
+        {
+            Console.Error.WriteLine("No local models discovered for offload.");
+            return 2;
+        }
+
+        if (cli.Pick >= 1 && cli.Pick > models.Count)
+        {
+            Console.Error.WriteLine($"--pick {cli.Pick} is out of range for offload (1..{models.Count}).");
+            return 2;
+        }
+
+        MenuItem chosen = cli.Pick >= 1 ? models[cli.Pick - 1] : models[0];
+        var runner = new OffloadRunner(providers, http);
+        var result = runner.Run(chosen, prompt, cfg);
+        if (!result.Ok)
+        {
+            Console.Error.WriteLine(result.Error);
+            return 2;
+        }
+
+        Console.WriteLine(result.Output);
+        return 0;
+    }
 
     static void DrawPickerHeader(bool animateBanner)
     {

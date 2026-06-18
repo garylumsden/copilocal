@@ -14,6 +14,7 @@ public sealed class CommandLineArgsTests
 
         cli.DryRun.Should().BeFalse();
         cli.Offline.Should().BeFalse();
+        cli.OffloadPrompt.Should().BeNull();
         cli.SessionName.Should().BeNull();
         cli.Pick.Should().Be(-1);
         cli.Interactive.Should().BeTrue();
@@ -33,6 +34,24 @@ public sealed class CommandLineArgsTests
         cli.Pick.Should().Be(2);
         cli.Interactive.Should().BeFalse();
         cli.CopilotArgs.Should().Equal("--banner");
+    }
+
+    [TestMethod]
+    public void Parse_OffloadPrompt_IsConsumedNotForwarded()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--offload", "summarize this file", "--", "--plan" });
+
+        cli.OffloadPrompt.Should().Be("summarize this file");
+        cli.CopilotArgs.Should().Equal("--plan");
+    }
+
+    [TestMethod]
+    public void Parse_LoneOffloadFlag_IsConsumedAsNullPrompt()
+    {
+        var cli = CommandLineArgs.Parse(new[] { "--offload" });
+
+        cli.OffloadPrompt.Should().BeNull();
+        cli.CopilotArgs.Should().NotContain("--offload");
     }
 
     [TestMethod]

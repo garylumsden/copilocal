@@ -1,0 +1,18 @@
+{
+  "name": "copilocal-plugins",
+  "owner": {
+    "name": "copilocal maintainers"
+  },
+  "metadata": {
+    "description": "Plugin marketplace entries for copilocal",
+    "version": "0.0.1"
+  },
+  "plugins": [
+    {
+      "name": "copilocal-cli",
+      "description": "Copilocal plugin feasibility spike for local-model offload routing",
+      "version": "0.0.1",
+      "source": "plugins/copilocal-cli"
+    }
+  ]
+}

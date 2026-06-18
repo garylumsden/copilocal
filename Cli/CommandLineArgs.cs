@@ -5,6 +5,7 @@ namespace Copilocal.Cli;
 internal sealed record CommandLineArgs(
     bool DryRun,
     bool Offline,
+    string? OffloadPrompt,
     string? SessionName,
     int Pick,
     List<string> CopilotArgs)
@@ -42,6 +43,7 @@ internal sealed record CommandLineArgs(
         // Non-short-circuit OR so every alias is removed from the forwarded args.
         bool showVersion = ExtractFlag(own, "--version") | ExtractFlag(own, "-V");
         bool showHelp = ExtractFlag(own, "--help") | ExtractFlag(own, "-h") | ExtractFlag(own, "-?");
+        string? offloadPrompt = ExtractValue(own, "--offload");
         string? sessionName = ExtractValue(own, "--name");
         int pick = ExtractInt(own, "--pick");
 
@@ -55,7 +57,7 @@ internal sealed record CommandLineArgs(
             a.StartsWith("--session-id", StringComparison.Ordinal) ||
             a == "-n" || a.StartsWith("--name", StringComparison.Ordinal));
 
-        return new CommandLineArgs(dryRun, offline, sessionName, pick, copilotArgs)
+        return new CommandLineArgs(dryRun, offline, offloadPrompt, sessionName, pick, copilotArgs)
         {
             UserManagedSession = userSession,
             ShowVersion = showVersion,

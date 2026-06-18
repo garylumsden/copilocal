@@ -159,6 +159,8 @@ copilocal --name "my feature"  # name the managed session (resume it later by na
 copilocal --pick 1             # non-interactive: pick model #1
 copilocal --pick 1 --offline   # non-interactive: pick #1 and run air-gapped
 copilocal --dry-run            # show what it would set, don't launch
+copilocal --offload "task"     # run one non-interactive local-model task and print reply
+copilocal --pick 2 --offload "task"   # offload using discovered model #2
 ```
 
 > **Continue with a different model:** in the interactive flow copilocal assigns a
@@ -407,6 +409,40 @@ Run the test suite:
 ```powershell
 dotnet test tests/Copilocal.Tests/Copilocal.Tests.csproj
 ```
+
+## Copilot CLI plugin feasibility spike
+
+This repo includes a plugin at `plugins/copilocal-cli` for `/copilocal` local-model offload routing.
+
+Install directly from local checkout:
+
+```powershell
+copilot plugin install ./plugins/copilocal-cli
+copilot plugin list
+```
+
+Install from GitHub subdirectory:
+
+```powershell
+copilot plugin install garylumsden/copilocal:plugins/copilocal-cli
+```
+
+Marketplace path for publishing/install:
+
+```powershell
+# register this repo as a marketplace source
+copilot plugin marketplace add garylumsden/copilocal
+
+# browse entries and install
+copilot plugin marketplace browse copilocal-plugins
+copilot plugin install copilocal-cli@copilocal-plugins
+```
+
+Current state of the spike:
+- packaging and install path implemented (`plugin.json`, marketplace entry, command/skill files)
+- `/copilocal` command template routes through `copilocal --offload "<task>"`
+- `copilocal --offload` executes a single local-model request and prints assistant text
+- note: Copilot CLI currently warns that direct plugin installs are deprecated; marketplace install is the preferred path
 
 ### Project layout
 

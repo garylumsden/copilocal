@@ -87,20 +87,32 @@ jobs:
           generate_release_notes: true
 
   # Submit the new version's Windows installers to winget (microsoft/winget-pkgs).
-  # Opt-in: set repo variable PUBLISH_WINGET=true and secret WINGET_TOKEN (a classic PAT
-  # that can fork winget-pkgs). The first version must be published once manually
-  # (e.g. `wingetcreate submit` or komac) before this can keep it updated. winget is
-  # Windows-only, so only the win-x64/arm64 binaries are submitted (macOS is GitHub-only).
+  # Opt-in: set repo variable PUBLISH_WINGET=true and secret WINGET_TOKEN to a classic
+  # GitHub PAT with public_repo scope.
   winget:
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     if: ${{ startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_WINGET == 'true' }}
     steps:
-      - uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: Gjlumsden.Copilocal
-          # This workflow runs on the tag push (not a `release` event), so tell the action
-          # which published release to read assets from.
-          release-tag: ${{ github.ref_name }}
-          installers-regex: 'copilocal-win-(x64|arm64)\.exe$'
-          token: ${{ secrets.WINGET_TOKEN }}
+      - name: Download WingetCreate
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe `
+            -OutFile wingetcreate.exe
+
+      - name: Submit winget update
+        shell: pwsh
+        env:
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $release = 'https://github.com/garylumsden/copilocal/releases'
+          .\wingetcreate.exe update Gjlumsden.Copilocal `
+            --version $version `
+            --urls `
+              "$release/download/${{ github.ref_name }}/copilocal-win-x64.exe|x64" `
+              "$release/download/${{ github.ref_name }}/copilocal-win-arm64.exe|arm64" `
+            --release-notes-url "$release/tag/${{ github.ref_name }}" `
+            --submit `
+            --no-open

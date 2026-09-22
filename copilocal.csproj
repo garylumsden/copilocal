@@ -8,7 +8,7 @@
     <AssemblyName>copilocal</AssemblyName>
     <RootNamespace>Copilocal</RootNamespace>
     <ApplicationIcon>assets\copilocal.ico</ApplicationIcon>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 

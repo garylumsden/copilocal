@@ -65,7 +65,9 @@ internal sealed class LaunchConfig
     /// <summary>LiteLLM runtime mode selected for install/lifecycle actions.</summary>
     internal string LiteLlmRuntimeMode { get; set; } = "docker";
 
-    static string Dir => Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
+    static string Dir =>
+        Environment.GetEnvironmentVariable("COPILOCAL_STATE_ROOT")
+        ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal");
     internal static string FilePath => Path.Join(Dir, "config.json");
 
     /// <summary>Load preferences from <paramref name="path"/> (defaults to <see cref="FilePath"/>).

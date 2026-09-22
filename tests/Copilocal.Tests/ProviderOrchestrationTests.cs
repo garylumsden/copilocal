@@ -699,9 +699,9 @@ public sealed class ProviderOrchestrationTests
     }
 
     [TestMethod]
-    public void ModelContextLength_OllamaNotLoaded_NoEnv_DefaultsTo4096()
+    public void ModelContextLength_OllamaNotLoaded_NoEnv_IsUnknownUntilWarmup()
     {
-        // Arrange: not loaded, env unset -> Ollama's 4096 default (clamped to a larger max).
+        // Arrange: not loaded, env unset -> Ollama selects from VRAM, so pre-load context is unknown.
         var http = new FakeHttpGateway();
         http.AddGet("http://localhost:11434/api/ps", """{"models":[]}""");
         http.AddPost("http://localhost:11434/api/show", ok: true, status: 200,
@@ -714,7 +714,7 @@ public sealed class ProviderOrchestrationTests
             Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", null);
 
             // Act / Assert
-            providers.ModelContextLength(OllamaItem("qwen2.5-coder:7b")).Should().Be(4096);
+            providers.ModelContextLength(OllamaItem("qwen2.5-coder:7b")).Should().Be(0);
         }
         finally { Environment.SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", prev); }
     }

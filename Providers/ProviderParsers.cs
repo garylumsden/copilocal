@@ -57,7 +57,7 @@ internal static class ProviderParsers
         }
     }
 
-    internal static IEnumerable<string> ParseLmStudio(string json)
+    internal static IEnumerable<(string Id, bool Tools, int MaxContext)> ParseLmStudio(string json)
     {
         var s = json.IndexOf('['); var e = json.LastIndexOf(']');
         if (s < 0 || e <= s) yield break;
@@ -73,7 +73,10 @@ internal static class ProviderParsers
                 string type = Str(m, "type");
                 if (type == "embedding") continue;
                 string id = Str(m, "modelKey");
-                if (id.Length > 0) yield return id;
+                if (id.Length == 0) continue;
+                bool tools = m.TryGetProperty("trainedForToolUse", out var toolUse)
+                    && toolUse.ValueKind == JsonValueKind.True;
+                yield return (id, tools, NumOrZero(m, "maxContextLength"));
             }
         }
     }

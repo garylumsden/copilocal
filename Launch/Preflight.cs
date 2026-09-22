@@ -24,64 +24,72 @@ internal static class Preflight
                 $"[yellow]{Markup.Escape(m.Model)} does not advertise tool calling.[/]\n" +
                 "Copilot CLI's agentic loop depends on native tool calls — without them it can't run\n" +
                 "tools, so you'll typically get errors or an unresponsive session.\n\n" +
-                "[dim]Pick a model whose catalog entry supports tool calling (most qwen2.5 and\n" +
-                "phi-4-mini variants do).[/]")
+                "[dim]Pick a model whose current catalog entry explicitly reports tool support.[/]")
             .Header("Model lacks tool calling").BorderColor(Color.Yellow).RoundedBorder());
         return AskLaunchAnyway(interactive);
     }
 
     // ---------------- context window ----------------
 
-    static bool ContextOk(MenuItem m, bool interactive, ProviderHub providers)
+    internal static bool ContextOk(MenuItem m, bool interactive, ProviderHub providers)
     {
         int ctx = providers.ModelContextLength(m);   // 0 = unknown -> can't judge, don't block
-        if (ctx == 0 || ctx >= ProviderHub.MinContext) return true;
+        if (ctx == 0 || ctx >= ProviderHub.RecommendedContext) return true;
 
         AnsiConsole.WriteLine();
-        AnsiConsole.Write(new Panel(ContextBody(m, ctx, providers))
-            .Header("Context window too small").BorderColor(Color.Yellow).RoundedBorder());
-        return AskLaunchAnyway(interactive);
+        bool tooSmall = ctx < ProviderHub.MinContext;
+        AnsiConsole.Write(new Panel(ContextBody(m, ctx, providers, tooSmall))
+            .Header(tooSmall ? "Context window too small" : "Context window below recommendation")
+            .BorderColor(Color.Yellow)
+            .RoundedBorder());
+
+        if (tooSmall) return AskLaunchAnyway(interactive);
+        if (!interactive) return true;
+        return AnsiConsole.Prompt(new ConfirmationPrompt("Launch with reduced usable context?") { DefaultValue = true });
     }
 
-    static string ContextBody(MenuItem m, int ctx, ProviderHub providers) => m.Provider switch
+    static string ContextBody(MenuItem m, int ctx, ProviderHub providers, bool tooSmall) => m.Provider switch
     {
-        "Ollama" => OllamaBody(providers),
-        "Foundry" => FoundryBody(ctx),
-        "LM Studio" => LmStudioBody(ctx),
-        _ => GenericBody(ctx),
+        "Ollama" => OllamaBody(ctx, providers, tooSmall),
+        "Foundry" => FoundryBody(ctx, tooSmall),
+        "LM Studio" => LmStudioBody(ctx, tooSmall),
+        _ => GenericBody(ctx, tooSmall),
     };
 
-    static string OllamaBody(ProviderHub providers)
+    static string OllamaBody(int ctx, ProviderHub providers, bool tooSmall)
     {
         int env = providers.OllamaContextLength();
         string state = env == 0
-            ? "[yellow]OLLAMA_CONTEXT_LENGTH is not set[/] and the context Ollama will load is small."
-            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/], but the effective context (clamped to the model's max) is below the {ProviderHub.MinContext} copilocal considers safe.";
+            ? $"[yellow]Ollama loaded this model with {ctx} tokens[/]."
+            : $"[yellow]OLLAMA_CONTEXT_LENGTH is {env}[/], and the effective model context is {ctx} tokens.";
         return state + "\n" +
-            "Copilot's system prompt + tools are larger, so the prompt gets truncated —\n" +
-            "you'll see blank replies, a \"continue\" loop, or [white]400 invalid message content type: <nil>[/].\n\n" +
-            "[dim]Set a roomier context (PowerShell), then restart Ollama and re-run copilocal:[/]\n" +
-            "  [white]setx OLLAMA_CONTEXT_LENGTH 131072[/]   [dim](clamped to each model's max)[/]";
+            ContextImpact(tooSmall) + "\n\n" +
+            "[dim]Set at least 64000 tokens for coding tools, or 131072 when memory allows.\n" +
+            "Use the Ollama app setting, or set OLLAMA_CONTEXT_LENGTH and restart Ollama.\n" +
+            "Run `ollama ps` after load to verify the active allocation.[/]";
     }
 
-    static string FoundryBody(int ctx) =>
-        $"[yellow]This model's context is {ctx} tokens[/] — far below Copilot's prompt (often 20k+).\n" +
-        "Foundry's NPU/OpenVINO variant is compiled with a small fixed context, so Copilot's\n" +
-        $"request overflows it: [white]input_ids size … exceeds max length ({ctx})[/].\n\n" +
-        "[dim]Use the GPU or CPU variant of this model instead — those are 32768 tokens, e.g.\n" +
-        "foundry model download <model>-generic-gpu (or -generic-cpu / -openvino-gpu).[/]";
+    static string FoundryBody(int ctx, bool tooSmall) =>
+        $"[yellow]This Foundry Local variant has a {ctx}-token compiled context[/].\n" +
+        ContextImpact(tooSmall) + "\n\n" +
+        "[dim]Run `foundry model list --variants` and choose a tool-capable variant with a\n" +
+        "larger context. Confirm the value with `foundry model info <model> -o json`.[/]";
 
-    static string LmStudioBody(int ctx) =>
-        $"[yellow]This model is loaded with a {ctx}-token context[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +
-        "Copilot's prompt is larger and gets truncated (blank/garbled replies, or\n" +
-        "\"n_keep >= n_ctx ... load the model with a larger context length\").\n\n" +
-        "[dim]In LM Studio's load dialog, set the Context Length to the model maximum (not the\n" +
-        "smaller custom default), then re-run copilocal.[/]";
+    static string LmStudioBody(int ctx, bool tooSmall) =>
+        $"[yellow]This model is loaded with a {ctx}-token context[/].\n" +
+        ContextImpact(tooSmall) + "\n\n" +
+        "[dim]Reload it with a larger value, for example:\n" +
+        "  lms load <model> --context-length 131072\n" +
+        "Use the model maximum only when system memory and GPU memory allow it.[/]";
 
-    static string GenericBody(int ctx) =>
-        $"[yellow]This model's context is {ctx} tokens[/] — below the {ProviderHub.MinContext} copilocal considers safe.\n" +
-        "Copilot's prompt is larger and may be truncated.\n\n" +
-        "[dim]Load this model with a larger context, or pick one with a bigger window.[/]";
+    static string GenericBody(int ctx, bool tooSmall) =>
+        $"[yellow]This model's context is {ctx} tokens[/].\n" +
+        ContextImpact(tooSmall) + "\n\n" +
+        "[dim]Load this model with a larger context, or choose a model with a larger window.[/]";
+
+    static string ContextImpact(bool tooSmall) => tooSmall
+        ? $"Copilot's static prompt and tools can consume much of this window. copilocal requires at least {ProviderHub.MinContext} tokens before scripted launches."
+        : $"The model can run, but GitHub recommends at least {ProviderHub.RecommendedContext} tokens for best results. Long sessions will compact earlier.";
 
     static bool AskLaunchAnyway(bool interactive) =>
         interactive && AnsiConsole.Prompt(new ConfirmationPrompt("Launch anyway?") { DefaultValue = false });

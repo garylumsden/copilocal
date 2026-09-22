@@ -37,10 +37,20 @@ public sealed class PreflightTests
     {
         // Arrange
         var http = new FakeHttpGateway();
-        http.AddGet("http://localhost:1234/api/v1/models", LmStudioModels(maxContext: 32_768));
+        http.AddGet("http://localhost:1234/api/v1/models", LmStudioModels(maxContext: 131_072));
         var providers = new ProviderHub(new FakeProcessRunner(), http);
 
         // Act / Assert
+        Preflight.Ok(LmStudioItem("target"), interactive: false, providers).Should().BeTrue();
+    }
+
+    [TestMethod]
+    public void Ok_LmStudioBelowRecommendedContext_NonInteractive_Proceeds()
+    {
+        var http = new FakeHttpGateway();
+        http.AddGet("http://localhost:1234/api/v1/models", LmStudioModels(maxContext: 64_000));
+        var providers = new ProviderHub(new FakeProcessRunner(), http);
+
         Preflight.Ok(LmStudioItem("target"), interactive: false, providers).Should().BeTrue();
     }
 

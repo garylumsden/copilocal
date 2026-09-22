@@ -7,11 +7,9 @@ using FluentAssertions;
 namespace Copilocal.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class ProviderInstallerTests
 {
-    private const string ReleasesUrl = "https://api.github.com/repos/microsoft/Foundry-Local/releases?per_page=40";
-    private const string FoundryMsixUrl = "https://example.test/foundry-cli-win-x64-winml.msix";
-
     [TestMethod]
     public void Install_OllamaWingetSuccess_ReturnsTrueAndRecordsCommand()
     {
@@ -109,91 +107,18 @@ public sealed class ProviderInstallerTests
     }
 
     [TestMethod]
-    public void Install_FoundrySuccess_DownloadsMsixAndRunsAddAppxPackage()
+    public void Install_FoundryWingetSuccess_ReturnsTrueAndRecordsCommand()
     {
-        // Arrange
         var proc = new FakeProcessRunner();
-        var http = new FakeHttpGateway();
-        http.AddGet(ReleasesUrl, FoundryReleaseJson());
-        var installer = new ProviderInstaller(proc, http);
+        proc.WhichResults["winget"] = @"C:\fake\winget.exe";
+        var installer = new ProviderInstaller(proc, new FakeHttpGateway());
 
-        // Act
-        var result = installer.Install("Foundry Local");
-
-        // Assert
-        result.Should().BeTrue();
-        http.GetCalls.Should().ContainSingle()
-            .Which.Should().Be(new FakeHttpGateway.GetCall(ReleasesUrl, 120_000, null));
-        http.DownloadCalls.Should().ContainSingle()
-            .Which.Should().Match<FakeHttpGateway.DownloadCall>(c =>
-                c.Url == FoundryMsixUrl &&
-                c.Path.EndsWith("foundry-cli-win-x64-winml.msix", StringComparison.Ordinal) &&
-                c.TimeoutMs == 600_000);
-        proc.RunCalls.Should().ContainSingle()
-            .Which.Should().Match<FakeProcessRunner.RunCall>(c =>
-                c.File == "powershell" &&
-                c.Args.Contains("Add-AppxPackage -Path", StringComparison.Ordinal) &&
-                c.Args.Contains("foundry-cli-win-x64-winml.msix", StringComparison.Ordinal) &&
-                c.TimeoutMs == 300_000);
-    }
-
-    [TestMethod]
-    public void Install_FoundryAddAppxPackageFailure_ReturnsFalse()
-    {
-        // Arrange
-        var proc = new FakeProcessRunner();
-        proc.QueueRun(code: 1, stderr: "Add-AppxPackage failed");
-        var http = new FakeHttpGateway();
-        http.AddGet(ReleasesUrl, FoundryReleaseJson());
-        var installer = new ProviderInstaller(proc, http);
-
-        // Act
-        var result = installer.Install("Foundry Local");
-
-        // Assert
-        result.Should().BeFalse();
-        http.DownloadCalls.Should().ContainSingle()
-            .Which.Url.Should().Be(FoundryMsixUrl);
-        proc.RunCalls.Should().ContainSingle()
-            .Which.File.Should().Be("powershell");
-    }
-
-    [TestMethod]
-    public void Install_FoundryDownloadThrows_ReturnsFalseAndRecordsDownload()
-    {
-        // Arrange
-        var proc = new FakeProcessRunner();
-        var http = new FakeHttpGateway();
-        http.AddGet(ReleasesUrl, FoundryReleaseJson());
-        http.AddDownloadException(FoundryMsixUrl, new HttpRequestException("download failed"));
-        var installer = new ProviderInstaller(proc, http);
-
-        // Act
-        var result = installer.Install("Foundry Local");
-
-        // Assert
-        result.Should().BeFalse();
-        http.DownloadCalls.Should().ContainSingle()
-            .Which.Url.Should().Be(FoundryMsixUrl);
-        proc.RunCalls.Should().BeEmpty();
-    }
-
-    [TestMethod]
-    public void Install_FoundryReleaseJsonHasNoMsix_ReturnsFalse()
-    {
-        // Arrange
-        var proc = new FakeProcessRunner();
-        var http = new FakeHttpGateway();
-        http.AddGet(ReleasesUrl, """[{"tag_name":"cli-preview-1.0.0","assets":[]}]""");
-        var installer = new ProviderInstaller(proc, http);
-
-        // Act
-        var result = installer.Install("Foundry Local");
-
-        // Assert
-        result.Should().BeFalse();
-        http.DownloadCalls.Should().BeEmpty();
-        proc.RunCalls.Should().BeEmpty();
+        installer.Install("Foundry Local").Should().BeTrue();
+        proc.RunCalls.Should().ContainSingle().Which.Should().Be(
+            new FakeProcessRunner.RunCall(
+                "winget",
+                "install --id Microsoft.FoundryLocal -e --silent --accept-source-agreements --accept-package-agreements",
+                600_000));
     }
 
     [TestMethod]
@@ -204,16 +129,30 @@ public sealed class ProviderInstallerTests
             var proc = new FakeProcessRunner();
             proc.WhichResults["uv"] = @"C:\fake\uv.exe";
             proc.WhichResults["pipx"] = @"C:\fake\pipx.exe";
-            proc.AddRun("uv", "tool install litellm[proxy]", code: 1, stderr: "uv failed");
-            proc.AddRun("pipx", "install litellm[proxy]", code: 0);
+            string package = $"litellm[proxy]=={ProviderInstaller.LiteLlmVersion}";
+            proc.AddRun(
+                "uv",
+                $"tool install --upgrade --default-index {ProviderInstaller.PythonPackageIndex} {package}",
+                code: 1,
+                stderr: "uv failed");
+            proc.AddRun(
+                "pipx",
+                $"install --force {package} --pip-args \"--index-url {ProviderInstaller.PythonPackageIndex}\"",
+                code: 0);
             var installer = new ProviderInstaller(proc, new FakeHttpGateway());
 
             var result = installer.InstallLiteLlm("python");
 
             result.Should().BeTrue();
             proc.RunCalls.Should().HaveCount(2);
-            proc.RunCalls[0].Should().Be(new FakeProcessRunner.RunCall("uv", "tool install litellm[proxy]", 600_000));
-            proc.RunCalls[1].Should().Be(new FakeProcessRunner.RunCall("pipx", "install litellm[proxy]", 600_000));
+            proc.RunCalls[0].Should().Be(new FakeProcessRunner.RunCall(
+                "uv",
+                $"tool install --upgrade --default-index {ProviderInstaller.PythonPackageIndex} {package}",
+                600_000));
+            proc.RunCalls[1].Should().Be(new FakeProcessRunner.RunCall(
+                "pipx",
+                $"install --force {package} --pip-args \"--index-url {ProviderInstaller.PythonPackageIndex}\"",
+                600_000));
         });
     }
 
@@ -270,9 +209,12 @@ public sealed class ProviderInstallerTests
             env.Should().Contain("UI_USERNAME=admin");
             env.Should().Contain("UI_PASSWORD=sk-test-key");
             env.Should().Contain("LITELLM_PORT=4010");
+            env.Should().MatchRegex(@"LITELLM_SALT_KEY=sk-[0-9a-f]{64}");
+            env.Should().MatchRegex(@"POSTGRES_PASSWORD=[0-9a-f]{64}");
             string compose = File.ReadAllText(Path.Join(LiteLlmDir(), "docker-compose.yml"));
             compose.Should().Contain("127.0.0.1:${LITELLM_PORT}:4000");
             compose.Should().Contain("host.docker.internal:host-gateway");
+            compose.Should().Contain(LiteLlmConfigStore.LiteLlmDockerImage);
             proc.RunCalls.Should().ContainSingle()
                 .Which.Should().Match<FakeProcessRunner.RunCall>(c =>
                     c.File == "docker"
@@ -307,6 +249,37 @@ public sealed class ProviderInstallerTests
             string env = File.ReadAllText(LiteLlmDockerEnvPath());
             env.Should().Contain("LITELLM_MASTER_KEY=sk-plain-key");
             env.Should().Contain("UI_PASSWORD=sk-plain-key");
+        });
+    }
+
+    [TestMethod]
+    public void StartLiteLlm_Docker_PreservesExistingDatabaseSecrets()
+    {
+        RunWithIsolatedLiteLlmDir(() =>
+        {
+            Directory.CreateDirectory(LiteLlmDir());
+            File.WriteAllText(LiteLlmDockerEnvPath(), """
+                LITELLM_SALT_KEY=sk-existing-salt
+                POSTGRES_PASSWORD=existing-database-password
+                """);
+            var proc = new FakeProcessRunner();
+            proc.WhichResults["docker"] = @"C:\fake\docker.exe";
+            var http = new FakeHttpGateway();
+            http.AddGet("http://localhost:4010/v1/models", """{"data":[]}""");
+            var installer = new ProviderInstaller(proc, http);
+            var cfg = new LaunchConfig
+            {
+                LiteLlmRuntimeMode = "docker",
+                LiteLlmBaseUrl = "http://localhost:4010",
+                LiteLlmApiKey = "sk-test-key",
+            };
+
+            installer.StartLiteLlm(cfg).Should().BeTrue();
+
+            string env = File.ReadAllText(LiteLlmDockerEnvPath());
+            env.Should().Contain("LITELLM_SALT_KEY=sk-existing-salt");
+            env.Should().Contain("POSTGRES_PASSWORD=existing-database-password");
+            env.Should().Contain("existing-database-password@db:5432/litellm");
         });
     }
 
@@ -419,6 +392,8 @@ public sealed class ProviderInstallerTests
             string compose = File.ReadAllText(Path.Join(LiteLlmDir(), "docker-compose.yml"));
             compose.Should().Contain("extra_hosts:");
             compose.Should().Contain("host.docker.internal:host-gateway");
+            compose.Should().Contain(LiteLlmConfigStore.LiteLlmDockerImage);
+            compose.Should().NotContain("main-latest");
         });
     }
 
@@ -574,7 +549,10 @@ public sealed class ProviderInstallerTests
             var proc = new FakeProcessRunner();
             proc.WhichResults["uv"] = @"C:\fake\uv.exe";
             proc.WhichResults["litellm"] = @"C:\fake\litellm.exe";
-            proc.AddRun("uv", "tool install litellm[proxy]", code: 0);
+            proc.AddRun(
+                "uv",
+                $"tool install --upgrade --default-index {ProviderInstaller.PythonPackageIndex} litellm[proxy]=={ProviderInstaller.LiteLlmVersion}",
+                code: 0);
             proc.QueueRun(code: 0, stdout: "12345\n");
             proc.QueueRun(code: 0);
             var http = new FakeHttpGateway();
@@ -776,7 +754,8 @@ public sealed class ProviderInstallerTests
             ]
             """;
 
-        ProviderParsers.ParseLmStudio(json).ToList().Should().Equal(["good-model"]);
+        ProviderParsers.ParseLmStudio(json).ToList()
+            .Should().ContainSingle().Which.Id.Should().Be("good-model");
     }
 
     [TestMethod]
@@ -842,7 +821,10 @@ public sealed class ProviderInstallerTests
     }
 
     private static string LiteLlmDir() =>
-        Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal", "litellm");
+        Path.Join(
+            Environment.GetEnvironmentVariable("COPILOCAL_STATE_ROOT")
+                ?? Path.Join(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilocal"),
+            "litellm");
 
     private static string LiteLlmDockerEnvPath() => Path.Join(LiteLlmDir(), ".env");
     private static string LiteLlmDockerConfigPath() => Path.Join(LiteLlmDir(), "config.yaml");
@@ -852,14 +834,9 @@ public sealed class ProviderInstallerTests
 
     private static void RunWithIsolatedLiteLlmDir(Action action)
     {
-        string liteLlmDir = LiteLlmDir();
-        string? backupPath = null;
-        bool hadExisting = Directory.Exists(liteLlmDir);
-        if (hadExisting)
-        {
-            backupPath = Path.Join(Path.GetTempPath(), $"copilocal-litellm-backup-{Guid.NewGuid():N}");
-            Directory.Move(liteLlmDir, backupPath);
-        }
+        string root = Path.Join(Path.GetTempPath(), $"copilocal-test-{Guid.NewGuid():N}");
+        string? previousRoot = Environment.GetEnvironmentVariable("COPILOCAL_STATE_ROOT");
+        Environment.SetEnvironmentVariable("COPILOCAL_STATE_ROOT", root);
 
         try
         {
@@ -867,42 +844,15 @@ public sealed class ProviderInstallerTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable("COPILOCAL_STATE_ROOT", previousRoot);
             try
             {
-                if (Directory.Exists(liteLlmDir))
-                    Directory.Delete(liteLlmDir, recursive: true);
+                if (Directory.Exists(root))
+                    Directory.Delete(root, recursive: true);
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
-
-            if (hadExisting && backupPath is not null && Directory.Exists(backupPath))
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(liteLlmDir)!);
-                Directory.Move(backupPath, liteLlmDir);
-            }
         }
     }
 
-    private static string FoundryReleaseJson() => $$"""
-        [
-          {
-            "tag_name": "cli-preview-1.2.3",
-            "assets": [
-              {
-                "name": "foundry-cli-win-x64-winml.msix",
-                "browser_download_url": "{{FoundryMsixUrl}}"
-              }
-            ]
-          },
-          {
-            "tag_name": "cli-preview-1.0.0",
-            "assets": [
-              {
-                "name": "older-win-x64-winml.msix",
-                "browser_download_url": "https://example.test/older.msix"
-              }
-            ]
-          }
-        ]
-        """;
 }

@@ -119,7 +119,7 @@ internal static class Program
                 {
                     if (!copilotCliEnsured) { EnsureCopilotCli(providers, installer, cli.Interactive); copilotCliEnsured = true; }
                     var item = models[cli.Pick - 1];
-                    if (!Preflight.Ok(item, cli.Interactive, providers)) return 0;
+                    if (!Preflight.Ok(item, cli.Interactive, providers)) return 2;
                     launcher.Launch(item, Options(cli, sessionId, resuming));
                     return launcher.LastExitCode;
                 }

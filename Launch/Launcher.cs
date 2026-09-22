@@ -23,7 +23,7 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
     const int OutputTokenContextDivisor = 4;  // leave most context for prompt/tool payload.
     const int MinAutoOutputTokens = 1_024;    // keep enough completion room for Copilot replies.
     const int MaxAutoOutputTokens = 8_192;    // cap local-model completions at practical size.
-    const int PromptTokenReserve = 512;       // reserve overhead for provider framing.
+    const int PromptTokenReserve = 1_024;     // reserve overhead for provider framing.
     const int LiteLlmTransientRetries = 3;    // allow proxy/model boot grace period.
     const int LiteLlmRetryDelayMs = 700;
 
@@ -61,6 +61,7 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
         }
 
         bool useResponses = false;
+        int contextBeforeWarmup = providers.ModelContextLength(m);
 
         // Validate the model actually responds (catches broken GPU EPs that 500 or emit garbage).
         if (!opts.DryRun)
@@ -121,6 +122,14 @@ internal sealed class Launcher(ProviderHub providers, IProcessRunner proc)
                             return false;
                     }
                     break;
+            }
+
+            int activeContext = providers.ModelContextLength(m);
+            if ((contextBeforeWarmup == 0 || activeContext != contextBeforeWarmup)
+                && !Preflight.ContextOk(m, opts.Interactive, providers))
+            {
+                LastExitCode = 2;
+                return false;
             }
         }
 

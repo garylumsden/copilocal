@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Updated test dependencies to their current stable versions.
+- Updated Foundry Local installation to use the official winget package.
+- Pinned LiteLLM 1.101.0 for Python installs and pinned the Docker image by digest.
+- Generated unique LiteLLM database and encryption secrets for new Docker setups.
+- Updated context checks for GitHub's 128k recommendation and Ollama's VRAM-based defaults.
+- Read LM Studio tool support and maximum context directly from `lms ls --json`.
+- Rechecked active model context after warm-up before GitHub Copilot CLI starts.
+- Returned a nonzero exit code when a scripted launch fails preflight checks.
+- Isolated runtime tests from the user's real copilocal configuration.
+
 ## [0.1.3] - 2026-08-19
 
 ### Changed

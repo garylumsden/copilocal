@@ -8,6 +8,8 @@ internal static class LiteLlmConfigStore
     const string OllamaDefaultBaseUrl = "http://localhost:11434/v1";
     const string LmStudioDefaultBaseUrl = "http://localhost:1234/v1";
     const string FoundryDefaultBaseUrl = "http://127.0.0.1:5273/v1";
+    internal const string LiteLlmDockerImage =
+        "ghcr.io/berriai/litellm:main-stable@sha256:32cfd7a427f6470033b4dcc9e75dfbea2aa32dbc298b0b511a40e962ce818362";
 
     internal sealed record LiteLlmModelEntry(string ModelName, string Model, string ApiBase, string? ApiKey);
 
@@ -108,6 +110,48 @@ internal static class LiteLlmConfigStore
                 return false;
 
             File.WriteAllText(liteLlmComposePath, updated);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool EnsureDockerImagePin(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return false;
+            string current = File.ReadAllText(path);
+            string[] lines = current.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+            bool inLiteLlm = false;
+            bool foundImage = false;
+            bool updated = false;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string trimmed = lines[i].Trim();
+                if (trimmed == "litellm:")
+                {
+                    inLiteLlm = true;
+                    continue;
+                }
+                if (!inLiteLlm || !trimmed.StartsWith("image:", StringComparison.Ordinal)) continue;
+
+                foundImage = true;
+                string indent = lines[i][..(lines[i].Length - lines[i].TrimStart().Length)];
+                string replacement = $"{indent}image: {LiteLlmDockerImage}";
+                updated = !string.Equals(lines[i], replacement, StringComparison.Ordinal);
+                lines[i] = replacement;
+                break;
+            }
+            if (!foundImage) return false;
+            if (updated)
+                File.WriteAllText(path, string.Join(Environment.NewLine, lines));
             return true;
         }
         catch (IOException)
@@ -228,7 +272,7 @@ internal static class LiteLlmConfigStore
               - litellm_pgdata:/var/lib/postgresql/data
 
           litellm:
-            image: ghcr.io/berriai/litellm:main-latest
+            image: ghcr.io/berriai/litellm:main-stable@sha256:32cfd7a427f6470033b4dcc9e75dfbea2aa32dbc298b0b511a40e962ce818362
             restart: unless-stopped
             depends_on:
               - db
@@ -267,11 +311,11 @@ internal static class LiteLlmConfigStore
     internal static string DefaultDockerEnvTemplate() =>
         """
         LITELLM_MASTER_KEY=
-        LITELLM_SALT_KEY=sk-local-dev-salt
+        LITELLM_SALT_KEY=
         UI_USERNAME=admin
         UI_PASSWORD=
-        POSTGRES_PASSWORD=dbpassword9090
+        POSTGRES_PASSWORD=
         LITELLM_PORT=4000
-        LITELLM_DATABASE_URL=postgresql://llmproxy:dbpassword9090@db:5432/litellm
+        LITELLM_DATABASE_URL=
         """;
 }

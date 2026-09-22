@@ -35,7 +35,7 @@ public sealed class LauncherTests
         var result = Launcher.TokenLimits(config, ctx: 32_768);
 
         // Assert
-        result.Should().Be((24_064, 8_192));
+        result.Should().Be((23_552, 8_192));
     }
 
     [TestMethod]

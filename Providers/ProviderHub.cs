@@ -216,8 +216,16 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         if (!File.Exists(LmsExe)) return items;
         var (code, outp, _) = proc.Run(LmsExe, "ls --json", DiscoverTimeoutMs);
         if (code != 0) return items;
-        foreach (var id in ProviderParsers.ParseLmStudio(outp))
-            items.Add(new MenuItem { Kind = MenuItemKind.Model, Provider = "LM Studio", BaseUrl = "http://localhost:1234/v1", Model = id, Tools = true });
+        foreach (var (id, tools, maxContext) in ProviderParsers.ParseLmStudio(outp))
+            items.Add(new MenuItem
+            {
+                Kind = MenuItemKind.Model,
+                Provider = "LM Studio",
+                BaseUrl = "http://localhost:1234/v1",
+                Model = id,
+                Tools = tools,
+                MaxContextTokens = maxContext,
+            });
         return items;
     }
 
@@ -288,19 +296,20 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     // loop, Ollama's "400 invalid message content type: <nil>", or Foundry's "input_ids size
     // ... exceeds max length". MinContext is the floor below which copilocal warns.
     //
-    // Per provider: Ollama loads models at OLLAMA_CONTEXT_LENGTH (default 4096 when unset);
-    // LM Studio is read from its native REST API; Foundry NPU/OpenVINO variants are compiled
-    // with a small fixed context (e.g. 4224) read from `foundry model info`.
+    // Per provider: Ollama reports the active allocation after load; LM Studio is read from
+    // its native REST API with `lms ls` metadata as a fallback; Foundry reads the compiled
+    // value from `foundry model info`.
 
-    internal const int MinContext = 16384;
+    internal const int MinContext = 32768;
+    internal const int RecommendedContext = 131072;
 
     /// <summary>Configured OLLAMA_CONTEXT_LENGTH, or 0 when unset/invalid.</summary>
     internal int OllamaContextLength() =>
         int.TryParse(Environment.GetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH"), out var c) && c > 0 ? c : 0;
 
     /// <summary>Effective context window (tokens) the model will serve, or 0 if unknown.
-    /// Ollama uses OLLAMA_CONTEXT_LENGTH (default 4096); LM Studio is read from its native
-    /// REST API (loaded context if loaded, else the model's max); Foundry from `model info`.</summary>
+    /// Ollama uses its active allocation or an explicit OLLAMA_CONTEXT_LENGTH; LM Studio uses
+    /// the loaded context with advertised maximum as a fallback; Foundry uses `model info`.</summary>
     internal int ModelContextLength(MenuItem m)
     {
         // Each branch is self-protecting (HTTP/JSON guarded), so no wrapper needed.
@@ -309,7 +318,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
             case "Ollama":
                 return OllamaEffectiveContext(m);
             case "LM Studio":
-                return LmStudioContextLength(m.Model, m.BaseUrl);
+                return LmStudioContextLength(m.Model, m.BaseUrl, m.MaxContextTokens);
             case "Foundry":
                 return FoundryContextLength(m);
             case "LiteLLM":
@@ -320,18 +329,19 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
     }
 
     /// <summary>Ollama's effective context (tokens) for the model. Prefers the actually-loaded
-    /// context from <c>/api/ps</c> (ground truth); otherwise what Ollama will load at —
-    /// OLLAMA_CONTEXT_LENGTH (default 4096) clamped to the model's trained max from <c>/api/show</c>.
-    /// This avoids assuming a flat 4096 and catches a large env var on a small-context model.</summary>
+    /// context from <c>/api/ps</c> (ground truth); otherwise an explicit
+    /// OLLAMA_CONTEXT_LENGTH clamped to the model's trained max from <c>/api/show</c>.
+    /// When the setting is automatic, return unknown until warm-up loads the model because
+    /// Ollama selects 4k, 32k, or 256k from available VRAM.</summary>
     int OllamaEffectiveContext(MenuItem m)
     {
         string host = OllamaHost(m.BaseUrl);
         int loaded = OllamaLoadedContext(host, m.Model);
         if (loaded > 0) return loaded;
         int env = OllamaContextLength();
-        int want = env > 0 ? env : 4096;
+        if (env == 0) return 0;
         int max = OllamaModelMaxContext(host, m.Model);
-        return max > 0 ? Math.Min(want, max) : want;
+        return max > 0 ? Math.Min(env, max) : env;
     }
 
     static string OllamaHost(string? baseUrl)
@@ -414,7 +424,7 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
         }
     }
 
-    int LmStudioContextLength(string modelId, string? baseUrl)
+    int LmStudioContextLength(string modelId, string? baseUrl, int advertisedMax)
     {
         try
         {
@@ -438,29 +448,30 @@ internal sealed class ProviderHub(IProcessRunner proc, IHttpGateway http)
                             int loaded = ProviderParsers.NumOrZero(cfg, "context_length");
                             if (loaded > 0) return loaded;
                         }
-                return ProviderParsers.NumOrZero(el, "max_context_length");
+                int max = ProviderParsers.NumOrZero(el, "max_context_length");
+                return max > 0 ? max : advertisedMax;
             }
-            return 0;
+            return advertisedMax;
         }
         catch (HttpRequestException)
         {
             // best-effort: LM Studio may be stopped or return non-JSON while warming.
-            return 0;
+            return advertisedMax;
         }
         catch (JsonException)
         {
             // best-effort: LM Studio may be stopped or return non-JSON while warming.
-            return 0;
+            return advertisedMax;
         }
         catch (OperationCanceledException)
         {
             // best-effort: LM Studio may be stopped or return non-JSON while warming.
-            return 0;
+            return advertisedMax;
         }
         catch (InvalidOperationException)
         {
             // best-effort: an unexpected JSON shape (e.g. a different service on the port) is unknown.
-            return 0;
+            return advertisedMax;
         }
     }
 

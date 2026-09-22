@@ -27,6 +27,7 @@ internal sealed class MenuItem
     internal string Model { get; init; } = "";          // model id / control label
     internal string? LoadAlias { get; init; }           // Foundry: alias used for `foundry model load`
     internal bool Tools { get; init; } = true;          // advertises tool-calling
+    internal int MaxContextTokens { get; init; }         // advertised maximum; 0 = unknown
 
     internal string Display => Kind switch
     {

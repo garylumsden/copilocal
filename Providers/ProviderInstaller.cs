@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Security.Cryptography;
 
 using Copilocal.Configuration;
 using Copilocal.Infrastructure;
@@ -14,9 +14,14 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
     const int LiteLlmReadyTimeoutMs = 90_000;
     const int LiteLlmReadyPollMs = 1_000;
     const int LiteLlmReadyProbeTimeoutMs = 3_000;
+    internal const string LiteLlmVersion = "1.101.0";
+    internal const string PythonPackageIndex = "https://packagefeedproxy.microsoft.io/pypi/simple";
 
     static string UserProfile => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    static string LiteLlmDir => Path.Join(UserProfile, ".copilocal", "litellm");
+    static string StateRoot =>
+        Environment.GetEnvironmentVariable("COPILOCAL_STATE_ROOT")
+        ?? Path.Join(UserProfile, ".copilocal");
+    static string LiteLlmDir => Path.Join(StateRoot, "litellm");
     static string LiteLlmComposePath => Path.Join(LiteLlmDir, "docker-compose.yml");
     static string LiteLlmDockerEnvPath => Path.Join(LiteLlmDir, ".env");
     static string LiteLlmDockerConfigPath => Path.Join(LiteLlmDir, "config.yaml");
@@ -31,7 +36,7 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         {
             "Ollama" => Winget("Ollama.Ollama"),
             "LM Studio" => Winget("ElementLabs.LMStudio"),
-            "Foundry Local" => InstallFoundry(),
+            "Foundry Local" => Winget("Microsoft.FoundryLocal"),
             "LiteLLM" => InstallLiteLlm(LiteLlmModeDocker),
             _ => false,
         };
@@ -47,110 +52,6 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         var (code, _, _) = proc.Run("winget",
             $"install --id {id} -e --silent --accept-source-agreements --accept-package-agreements", 600_000);
         return code == 0;
-    }
-
-    bool InstallFoundry()
-    {
-        string? url = ResolveFoundryMsixUrl();
-        if (url is null) return false;
-        string tmp = Path.Join(Path.GetTempPath(), Path.GetFileName(url));
-        try
-        {
-            http.DownloadToFile(url, tmp, 600_000);
-            var (code, _, _) = proc.Run("powershell",
-                $"-NoProfile -Command \"Add-AppxPackage -Path {PsSingleQuoted(tmp)}\"", 300_000);
-            return code == 0;
-        }
-        catch (HttpRequestException)
-        {
-            // best-effort: install flow reports failure and leaves docs fallback to user.
-            return false;
-        }
-        catch (IOException)
-        {
-            // best-effort: install flow reports failure and leaves docs fallback to user.
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            // best-effort: install flow reports failure and leaves docs fallback to user.
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // best-effort: install flow reports failure and leaves docs fallback to user.
-            return false;
-        }
-        finally
-        {
-            try { File.Delete(tmp); }
-            catch (IOException)
-            {
-                // best-effort: downloaded installer cache can remain if locked.
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // best-effort: downloaded installer cache can remain if locked.
-            }
-        }
-    }
-
-    /// <summary>Resolve the latest Foundry Local CLI MSIX (win-{arch}-winml) from GitHub releases.</summary>
-    string? ResolveFoundryMsixUrl()
-    {
-        string arch = System.Runtime.InteropServices.RuntimeInformation.OSArchitecture switch
-        {
-            System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
-            _ => "x64",
-        };
-        try
-        {
-            string body = http.GetString(
-                "https://api.github.com/repos/microsoft/Foundry-Local/releases?per_page=40", 120_000);
-            using var doc = JsonDocument.Parse(body);
-
-            JsonElement best = default; Version bestVer = new(0, 0); bool found = false;
-            foreach (var rel in doc.RootElement.EnumerateArray())
-            {
-                if (!rel.TryGetProperty("tag_name", out var tn)) continue;
-                string tag = tn.GetString() ?? "";
-                if (!tag.StartsWith("cli-preview-")) continue;
-                if (!rel.TryGetProperty("assets", out var assets) || assets.GetArrayLength() == 0) continue;
-                if (!Version.TryParse(tag.Replace("cli-preview-", ""), out var v)) continue;
-                if (v > bestVer) { bestVer = v; best = rel; found = true; }
-            }
-            if (!found) return null;
-
-            string? fallback = null;
-            foreach (var a in best.GetProperty("assets").EnumerateArray())
-            {
-                string name = a.TryGetProperty("name", out var nm) ? nm.GetString() ?? "" : "";
-                string dl = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
-                if (name.Contains($"win-{arch}-winml") && name.EndsWith(".msix")) return dl;
-                if (name.Contains($"win-{arch}") && name.EndsWith(".msix")) fallback = dl;
-            }
-            return fallback;
-        }
-        catch (HttpRequestException)
-        {
-            // best-effort: missing release metadata means install flow reports failure.
-            return null;
-        }
-        catch (JsonException)
-        {
-            // best-effort: missing release metadata means install flow reports failure.
-            return null;
-        }
-        catch (OperationCanceledException)
-        {
-            // best-effort: missing release metadata means install flow reports failure.
-            return null;
-        }
-        catch (InvalidOperationException)
-        {
-            // best-effort: an unexpected JSON shape from the releases API means no URL.
-            return null;
-        }
     }
 
     internal static string PsSingleQuoted(string value) =>
@@ -277,14 +178,20 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         string? uvErr = null;
         if (proc.Which("uv") is not null)
         {
-            var (code, outp, err) = proc.Run("uv", "tool install litellm[proxy]", 600_000);
+            var (code, outp, err) = proc.Run(
+                "uv",
+                $"tool install --upgrade --default-index {PythonPackageIndex} litellm[proxy]=={LiteLlmVersion}",
+                600_000);
             if (code == 0) return (true, "installed via uv");
             uvErr = $"uv install failed: {SingleLine(err, outp)}";
         }
         string? pipxErr = null;
         if (proc.Which("pipx") is not null)
         {
-            var (code, outp, err) = proc.Run("pipx", "install litellm[proxy]", 600_000);
+            var (code, outp, err) = proc.Run(
+                "pipx",
+                $"install --force litellm[proxy]=={LiteLlmVersion} --pip-args \"--index-url {PythonPackageIndex}\"",
+                600_000);
             if (code == 0) return (true, "installed via pipx");
             pipxErr = $"pipx install failed: {SingleLine(err, outp)}";
         }
@@ -297,7 +204,10 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
             reasons.Add("python/python3 not found on PATH");
             return (false, string.Join("; ", reasons));
         }
-        var (pipCode, pipOut, pipErr) = proc.Run(python, "-m pip install --user litellm[proxy]", 600_000);
+        var (pipCode, pipOut, pipErr) = proc.Run(
+            python,
+            $"-m pip install --user --upgrade litellm[proxy]=={LiteLlmVersion} --index-url {PythonPackageIndex}",
+            600_000);
         if (pipCode == 0) return (true, $"installed via {Path.GetFileName(python)} -m pip --user");
 
         var allReasons = new List<string>();
@@ -437,6 +347,7 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         {
             Directory.CreateDirectory(LiteLlmDir);
             LiteLlmConfigStore.WriteIfMissing(LiteLlmComposePath, LiteLlmConfigStore.DockerComposeTemplate());
+            if (!LiteLlmConfigStore.EnsureDockerImagePin(LiteLlmComposePath)) return false;
             LiteLlmConfigStore.WriteIfMissing(LiteLlmDockerConfigPath, LiteLlmConfigStore.DockerConfigTemplate());
             LiteLlmConfigStore.WriteIfMissing(LiteLlmPythonConfigPath, LiteLlmConfigStore.PythonConfigTemplate(LiteLlmDir));
             LiteLlmConfigStore.WriteIfMissing(LiteLlmDockerEnvPath, LiteLlmConfigStore.DefaultDockerEnvTemplate());
@@ -460,14 +371,21 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         const string uiUser = "admin";
         try
         {
+            var existing = ReadEnvFile(LiteLlmDockerEnvPath);
+            string? saltKey = existing.GetValueOrDefault("LITELLM_SALT_KEY");
+            if (string.IsNullOrWhiteSpace(saltKey))
+                saltKey = $"sk-{RandomNumberGenerator.GetHexString(64).ToLowerInvariant()}";
+            string? databasePassword = existing.GetValueOrDefault("POSTGRES_PASSWORD");
+            if (string.IsNullOrWhiteSpace(databasePassword))
+                databasePassword = RandomNumberGenerator.GetHexString(64).ToLowerInvariant();
             string env =
                 $"LITELLM_MASTER_KEY={key}\n" +
-                "LITELLM_SALT_KEY=sk-local-dev-salt\n" +
+                $"LITELLM_SALT_KEY={saltKey}\n" +
                 $"UI_USERNAME={uiUser}\n" +
                 $"UI_PASSWORD={key}\n" +
-                "POSTGRES_PASSWORD=dbpassword9090\n" +
+                $"POSTGRES_PASSWORD={databasePassword}\n" +
                 $"LITELLM_PORT={port}\n" +
-                "LITELLM_DATABASE_URL=postgresql://llmproxy:dbpassword9090@db:5432/litellm\n";
+                $"LITELLM_DATABASE_URL=postgresql://llmproxy:{databasePassword}@db:5432/litellm\n";
             File.WriteAllText(LiteLlmDockerEnvPath, env);
             return true;
         }
@@ -479,6 +397,19 @@ internal sealed class ProviderInstaller(IProcessRunner proc, IHttpGateway http)
         {
             return false;
         }
+    }
+
+    static Dictionary<string, string> ReadEnvFile(string path)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (!File.Exists(path)) return values;
+        foreach (string raw in File.ReadLines(path))
+        {
+            int equals = raw.IndexOf('=');
+            if (equals <= 0) continue;
+            values[raw[..equals].Trim()] = raw[(equals + 1)..].Trim();
+        }
+        return values;
     }
 
     static string ResolveLiteLlmApiKey(LaunchConfig cfg)

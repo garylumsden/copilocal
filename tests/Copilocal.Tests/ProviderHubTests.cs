@@ -7,6 +7,7 @@ using FluentAssertions;
 namespace Copilocal.Tests;
 
 [TestClass]
+[DoNotParallelize]
 public sealed class ProviderHubTests
 {
     [TestMethod]
@@ -153,7 +154,9 @@ public sealed class ProviderHubTests
             header [
               {
                 "type": "llm",
-                "modelKey": "qwen/qwen3-coder"
+                "modelKey": "qwen/qwen3-coder",
+                "trainedForToolUse": true,
+                "maxContextLength": 131072
               },
               {
                 "type": "embedding",
@@ -161,7 +164,9 @@ public sealed class ProviderHubTests
               },
               {
                 "type": "llm",
-                "modelKey": "meta/llama"
+                "modelKey": "meta/llama",
+                "trainedForToolUse": false,
+                "maxContextLength": 32768
               },
               {
                 "type": "llm"
@@ -173,7 +178,9 @@ public sealed class ProviderHubTests
         var result = ProviderParsers.ParseLmStudio(json).ToList();
 
         // Assert
-        result.Should().Equal("qwen/qwen3-coder", "meta/llama");
+        result.Should().HaveCount(2);
+        result[0].Should().Be(("qwen/qwen3-coder", true, 131072));
+        result[1].Should().Be(("meta/llama", false, 32768));
     }
 
     [TestMethod]
@@ -193,7 +200,7 @@ public sealed class ProviderHubTests
     public void ParseLmStudio_NonObjectElements_AreSkipped()
     {
         ProviderParsers.ParseLmStudio("""[123,"s",{"type":"llm","modelKey":"a"}]""")
-            .ToList().Should().Equal("a");
+            .ToList().Should().ContainSingle().Which.Id.Should().Be("a");
     }
 
     [TestMethod]
@@ -313,11 +320,11 @@ public sealed class ProviderHubTests
 
     private static void RunWithIsolatedLaunchConfig(string configJson, Action action)
     {
+        string root = Path.Join(Path.GetTempPath(), $"copilocal-test-{Guid.NewGuid():N}");
+        string? previousRoot = Environment.GetEnvironmentVariable("COPILOCAL_STATE_ROOT");
+        Environment.SetEnvironmentVariable("COPILOCAL_STATE_ROOT", root);
         string path = LaunchConfig.FilePath;
         string? dir = Path.GetDirectoryName(path);
-        string backup = Path.Join(Path.GetTempPath(), $"copilocal-config-backup-{Guid.NewGuid():N}.json");
-        bool hadFile = File.Exists(path);
-        if (hadFile) File.Copy(path, backup, overwrite: true);
 
         try
         {
@@ -327,20 +334,11 @@ public sealed class ProviderHubTests
         }
         finally
         {
+            Environment.SetEnvironmentVariable("COPILOCAL_STATE_ROOT", previousRoot);
             try
             {
-                if (File.Exists(path)) File.Delete(path);
+                if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
             }
-            catch (IOException) { }
-            catch (UnauthorizedAccessException) { }
-
-            if (hadFile && File.Exists(backup))
-            {
-                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                File.Copy(backup, path, overwrite: true);
-            }
-
-            try { if (File.Exists(backup)) File.Delete(backup); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }

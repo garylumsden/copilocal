@@ -72,8 +72,9 @@ winget install Gjlumsden.Copilocal
 #      e.g. Ollama:
 ollama pull qwen2.5-coder:7b
 
-# 3. Ollama only — give Copilot's prompt room (64k–128k if memory allows):
+# 3. Ollama only — set at least 64k context for coding tools when memory allows:
 setx OLLAMA_CONTEXT_LENGTH 131072         # then restart Ollama
+# After the model loads, verify the active allocation with: ollama ps
 
 # 4. Launch
 copilocal
@@ -104,26 +105,26 @@ but that's **one model per session**, set by hand. copilocal turns it into a pic
 - **GitHub Copilot CLI** (`copilot` on `PATH`) — https://github.com/github/copilot-cli
   (on Windows copilocal can install it for you at startup via winget; on macOS install it
   yourself, e.g. with Homebrew)
-- At least one provider path: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/ai-foundry/foundry-local/), [LM Studio](https://lmstudio.ai), or [LiteLLM](https://docs.litellm.ai/docs/proxy/docker_quick_start)
+- At least one provider path: [Ollama](https://ollama.com), [Foundry Local](https://learn.microsoft.com/azure/foundry-local/), [LM Studio](https://lmstudio.ai), or [LiteLLM](https://docs.litellm.ai/docs/proxy/docker_quick_start)
   (copilocal can install/manage local runtimes and LiteLLM runtime flows from the UI)
-  - **Foundry Local note:** copilocal expects the newer preview CLI surface (0.10+:
-    `foundry cache list -o json`, `foundry server ...`). If `winget install
-    Microsoft.FoundryLocal` gives you an older 0.8.x service-based CLI, use copilocal's
-    installer flow or the `cli-preview-*` GitHub release instead.
+  - **Foundry Local note:** copilocal uses the current preview CLI surface:
+    `foundry cache list -o json`, `foundry model ...`, and `foundry server ...`.
 - Windows x64 / ARM64, or macOS arm64 / x64 — a single self-contained binary; no .NET runtime required
 
 ### Validated with
 
 copilocal talks to each runtime's CLI/REST surface, which shifts over time. The current
-behaviour is verified against these versions (Windows 11 x64, June 2026):
+behaviour and documentation were checked against these versions on Windows 11 x64 in
+September 2026:
 
 | Component | Version |
 | --- | --- |
-| Ollama | 0.30.6 |
-| LM Studio | 0.4.16 |
-| Foundry Local (CLI) | 0.10.0 |
-| GitHub Copilot CLI | 1.0.62 |
-| .NET SDK (build) | 10.0.300 |
+| Ollama | 0.34.2 |
+| LM Studio | 0.4.23+1 |
+| Foundry Local (CLI) | 0.10.3 |
+| LiteLLM | 1.101.0 |
+| GitHub Copilot CLI | 1.0.88 |
+| .NET SDK (build) | 10.0 |
 
 Newer releases usually work too; if discovery or launch misbehaves after a runtime update,
 please [open an issue](https://github.com/garylumsden/copilocal/issues) noting the version.
@@ -232,48 +233,42 @@ A few gotchas copilocal now handles for you:
   `400 invalid message content type: <nil>`. When the warm-up detects a reasoning model
   and the endpoint exposes `/v1/responses` (Ollama, LM Studio do), copilocal switches it
   to the OpenAI **Responses** wire API (`COPILOT_PROVIDER_WIRE_API=responses`).
-- **Context too small for Copilot's prompt.** Copilot's system prompt + tools run to 20k+
-  tokens, so a small window truncates it (blank replies / loops / 400). copilocal reads each
-  provider's effective context and warns below **16384** tokens:
+- **Context too small for Copilot's prompt.** Copilot's static prompt, tool schemas, history,
+  input, and output share one window. GitHub recommends at least **128k tokens** for best
+  results. copilocal blocks scripted launches below **32768**, warns below **131072**, and
+  checks the active context again after model warm-up:
   - **Ollama** auto-sizes context from available VRAM when `OLLAMA_CONTEXT_LENGTH` is unset
-    (for example 4k under 24 GiB VRAM, 32k at 24–48 GiB, 256k at 48+ GiB). For Copilot, set
-    an explicit large value such as `64000` or `131072` if memory allows, then restart Ollama.
-  - **Foundry Local** bakes the context into each compiled **variant**. On the validated
-    `qwen2.5-coder` variants with Foundry CLI 0.10.0, the `…-openvino-npu` (NPU) build
-    reported **4224** tokens (overflows as `input_ids size … exceeds max length`) and couldn't
-    be widened, while GPU/CPU variants of the same model reported **32768**. Treat those as
-    observed model/version values, not universal guarantees. Use a non-NPU variant, e.g.
-    `foundry model download <model>-generic-gpu` (or `-generic-cpu` / `-openvino-gpu`), or
-    `foundry model run <model> --device GPU`.
-  - **LM Studio** loads each model at the context chosen in its **load dialog**, and the
-    default *custom* length (often **8192**) is too small for Copilot. When you load the model,
-    set **Context Length** to the **model maximum** (turn off the custom limit / slide it to max)
-    so the loaded window fits Copilot's prompt. Otherwise you'll see
-    `n_keep (…) >= n_ctx (8192) … load the model with a larger context length`.
+    (4k below 24 GiB VRAM, 32k at 24–48 GiB, and 256k at 48 GiB or more). Ollama recommends
+    at least **64000** for coding tools. Set `64000` or `131072` if memory allows. copilocal
+    reads `/api/ps` after warm-up, so token limits use the active allocation, not an assumed default.
+  - **Foundry Local** compiles context into each device variant. Run
+    `foundry model list --variants`, then inspect a candidate with
+    `foundry model info <model> -o json`. The tested Qwen 2.5 Coder NPU variants on Foundry
+    Local 0.10.3 report **4224** tokens and are too small for Copilot CLI. Choose another
+    tool-capable variant when the context warning appears.
+  - **LM Studio** exposes `trainedForToolUse` and `maxContextLength` through `lms ls --json`.
+    copilocal now uses both fields. It reads the loaded allocation from `/api/v1/models`
+    after warm-up. Load a larger context with
+    `lms load <model> --context-length 131072` when memory allows.
 
 ## Recommended models
 
-Models need **tool calling** (for Copilot's agentic loop) and ideally fit your VRAM.
-Small, fast, non-reasoning coders are the safest start; reasoning models work too
-(copilocal routes them via the Responses API automatically).
+Models need **tool calling**, **streaming**, and enough context for Copilot's tool schemas.
+Prefer a current tool-trained model. Reasoning models can work because copilocal detects
+them and uses the Responses API when the provider supports it.
 
 | Use | Ollama | Foundry Local | LM Studio |
 | --- | --- | --- | --- |
-| Best small coder | `qwen2.5-coder:7b` | `qwen2.5-coder-7b` | `qwen2.5-coder-7b-instruct` |
-| Lighter / faster | `qwen2.5-coder:3b`, `llama3.2:3b` | `qwen2.5-coder-1.5b`, `phi-4-mini` | `llama-3.2-3b-instruct` |
-| Tiny (quick tests) | `llama3.2:1b` | `qwen2.5-coder-0.5b` | `qwen3-0.6b` |
-| Recent / agentic | `granite4:3b`, `qwen3:4b` | `phi-4-mini`, `qwen2.5-7b` | `granite-4.0-h-tiny`, `phi-4-mini-instruct` |
+| Current tool-trained examples | `gemma4`, `qwen3`, `granite4` | Use `foundry model list` and select a row with the `tools` task | `ibm/granite-4-h-tiny`, `mistralai/ministral-3-3b` |
+| Reasoning examples | `gpt-oss` | Use a catalog model that reports tool calling | Use a model that supports `/v1/responses` and tool use |
+| Compatibility checks | `ollama ps`, then copilocal's tool probe | `foundry model info <model> -o json` | `lms ls --json`, then copilocal's tool probe |
 
 > Tags change fast — check the latest live: Ollama
 > [`ollama.com/library?sort=newest`](https://ollama.com/library?sort=newest),
 > Foundry with `foundry model list`, and LM Studio's in-app **Discover** catalog.
 
-> **NPU note:** Foundry Local's `*-openvino-npu` variants run on a supported Intel/Qualcomm
-> **NPU**, freeing the GPU/CPU — but the validated `qwen2.5-coder` NPU variants on Foundry CLI
-> 0.10.0 reported a **4224-token** context, too small for Copilot CLI's prompt. The validated
-> GPU/CPU variants of the same model reported **32768** tokens. Treat these as observed values,
-> not guarantees; for copilocal, prefer a GPU/CPU variant (`-generic-gpu` / `-generic-cpu` /
-> `-openvino-gpu`) when the NPU variant warns on context.
+> **Foundry variant note:** device variants can have different compiled contexts and tool
+> support. Do not select by alias alone. Inspect the exact variant before use.
 
 ### Example: tuning to your machine
 
@@ -322,9 +317,9 @@ Copilot's prompt a lot — useful for local models with limited context.
 Unknown local models aren't in Copilot's catalog, so Copilot falls back to generic
 `COPILOT_PROVIDER_MAX_PROMPT_TOKENS` / `MAX_OUTPUT_TOKENS` defaults that can overshoot the
 model's real context and truncate to empty/garbled output. copilocal **auto-derives** them
-from the model's actual context — Ollama via `OLLAMA_CONTEXT_LENGTH`, LM Studio via its
-loaded context (`/api/v1/models`) — reserving room for the reply
-(`prompt ≈ context − output − buffer`, `output ≈ context/4`, capped at 8192). Override
+from the model's active context. Ollama uses `/api/ps` after warm-up, and LM Studio uses
+`/api/v1/models` with `lms ls --json` metadata as a fallback. copilocal reserves room for
+provider framing and the reply (`output ≈ context/4`, capped at 8192). Override
 either with the **Max prompt tokens** / **Max output tokens** fields in *Configure launch
 options* (blank = auto).
 
@@ -335,18 +330,19 @@ providers** opens a checkbox list (space to toggle) with a docs link for each:
 
 - **Ollama** — winget (`Ollama.Ollama`)
 - **LM Studio** — winget (`ElementLabs.LMStudio`)
-- **Foundry Local** — latest CLI MSIX from [microsoft/Foundry-Local](https://github.com/microsoft/Foundry-Local) releases (matches your CPU architecture)
+- **Foundry Local** — winget (`Microsoft.FoundryLocal`)
 - **LiteLLM** — choose runtime mode in UI:
   - setup mode can either **install local LiteLLM runtime** or **skip install and configure an existing LiteLLM instance**
   - if local install fails, copilocal shows the failure reason and can immediately switch to existing-instance setup
   - start failures now include the concrete reason (e.g., missing Docker or missing LiteLLM key)
   - start now waits until LiteLLM is actually reachable (`/v1/models`) before reporting success
   - if LiteLLM is enabled on a local endpoint and discovery can't resolve it at startup, copilocal attempts one automatic LiteLLM start, then re-discovers models
-  - **docker**: scaffolds a compose stack (LiteLLM + DB + UI) and manages start/stop/status
-  - **python**: installs `litellm[proxy]` (uv/pip path), uses a local SQLite-backed config, and manages start/stop/status
+  - **docker**: scaffolds a compose stack with a pinned LiteLLM image, Postgres, and the Admin UI
+  - **python**: installs the pinned `litellm[proxy]` version, uses SQLite, and manages start/stop/status
   - after a successful LiteLLM start, copilocal prints the login key + endpoint + clickable UI link so you can sign in and manage models/config
   - you can print the clickable UI link any time via **Manage LiteLLM runtime → Show runtime status**
   - key hint: keys are normalized to `sk-...` format; docker UI login uses `admin` + the same LiteLLM key
+  - new Docker setups generate and retain random database and encryption secrets in `.env`
   - setup prompt: optionally add all discovered local-provider models into LiteLLM config
   - manage action: add any missing local-provider models later (no duplicate entries)
 
@@ -384,8 +380,15 @@ providers** opens a checkbox list (space to toggle) with a docs link for each:
 - Global app settings: `~/.copilocal/config.json`
 - LiteLLM local runtime files (compose/config/.env/pid): `~/.copilocal/litellm/`
 
-For Foundry Local, that installer intentionally uses the compatible `cli-preview-*` release
-instead of assuming the `Microsoft.FoundryLocal` winget package has the same CLI surface.
+### Provider compatibility references
+
+- [GitHub Copilot CLI BYOK model requirements](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/use-byok-models)
+- [Ollama context length](https://docs.ollama.com/context-length)
+- [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
+- [Foundry Local CLI reference](https://learn.microsoft.com/azure/foundry-local/reference/reference-cli)
+- [LM Studio model loading](https://lmstudio.ai/docs/cli/local-models/load)
+- [LM Studio tool use](https://lmstudio.ai/docs/developer/openai-compat/tools)
+- [LiteLLM Docker quick start](https://docs.litellm.ai/docs/proxy/docker_quick_start)
 
 ## Build from source
 
